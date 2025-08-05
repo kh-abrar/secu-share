@@ -1,46 +1,54 @@
-const AWS = require('aws-sdk');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { Upload } = require('@aws-sdk/lib-storage');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const dotenv = require('dotenv');
+
 dotenv.config();
 
-AWS.config.update({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+const s3Client = new S3Client({
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
   region: process.env.AWS_REGION,
 });
 
-const s3 = new AWS.S3();
+const uploadFileToS3 = async (buffer, key, mimetype) => {
+  const upload = new Upload({
+    client: s3Client,
+    params: {
+      Bucket: process.env.AWS_S3_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: mimetype,
+      ACL: 'private',
+    },
+  });
 
-const uploadFileToS3 = (buffer, key, mimetype) => {
-  const params = {
-    Bucket: process.env.AWS_S3_BUCKET,
-    Key: key,
-    Body: buffer,
-    ContentType: mimetype,
-    ACL: 'private',
-  };
-  return s3.upload(params).promise();
+  return upload.done();
 };
 
-const getSignedUrl = (key, expiresIn = 300) => {
-  const params = {
+const getSignedUrlForDownload = async (key, expiresIn = 300) => {
+  const command = new GetObjectCommand({
     Bucket: process.env.AWS_S3_BUCKET,
     Key: key,
-    Expires: expiresIn,
-  };
-  return s3.getSignedUrl('getObject', params);
+  });
+
+  return getSignedUrl(s3Client, command, { expiresIn });
 };
 
-const deleteFileFromS3 = (key) => {
-  const params = {
+const deleteFileFromS3 = async (key) => {
+  const command = new DeleteObjectCommand({
     Bucket: process.env.AWS_S3_BUCKET,
     Key: key,
-  };
-  return s3.deleteObject(params).promise();
+  });
+
+  return s3Client.send(command);
 };
 
 module.exports = {
-  s3,
+  s3Client,
   uploadFileToS3,
-  getSignedUrl,
+  getSignedUrl: getSignedUrlForDownload,
   deleteFileFromS3,
 };
