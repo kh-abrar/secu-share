@@ -11,14 +11,21 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "aws-sdk": "^2.1692.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "fs": "^0.0.1-security",
     "jsonwebtoken": "^9.0.2",
+    "langchain": "^0.3.30",
     "mongoose": "^8.17.0",
+    "multer": "^2.0.2",
+    "multer-s3": "^3.0.1",
     "nodemon": "^3.1.10",
-    "path": "^0.12.7"
+    "openai": "^5.11.0",
+    "path": "^0.12.7",
+    "pdf-parse": "^1.1.1",
+    "uuid": "^11.1.0"
   }
 }
