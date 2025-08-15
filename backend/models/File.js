@@ -9,7 +9,10 @@ const fileSchema = new mongoose.Schema({
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   isPublic: { type: Boolean, default: false },
   sharedWith: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  aiSummary: { type: String, default: null },
+  // aiSummary: { type: String, default: null },
+  encryptionType: {type: String, default: null},
+  iv: {type: String, default: null},
+  encryptedKey: {type: String, default: null}
 }, {
   timestamps: true,
 });
