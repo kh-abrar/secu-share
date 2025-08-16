@@ -12,10 +12,12 @@ exports.register = async (req, res) => {
   try {
     const { email, password, name } = req.body;
 
-    // Password strength validation
-    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+
     if (!passwordRegex.test(password)) {
-      return res.status(400).json({ message: 'Password must be at least 8 characters long and include at least one letter and one number.' });
+      return res.status(400).json({
+        message: 'Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character.'
+      });
     }
 
     const existingUser = await User.findOne({ email });
