@@ -12,7 +12,12 @@ const fileSchema = new mongoose.Schema({
   // aiSummary: { type: String, default: null },
   encryptionType: {type: String, default: null},
   iv: {type: String, default: null},
-  encryptedKey: {type: String, default: null}
+  encryptedKey: {type: String, default: null},
+  accessLevel: {
+    type: String,
+    enum: ['private', 'shared', 'public'],
+    default: 'private',
+  }
 }, {
   timestamps: true,
 });

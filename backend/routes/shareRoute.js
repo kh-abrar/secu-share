@@ -6,6 +6,7 @@ const authMiddleware = require('../middlewares/authMiddleware');
 // Authenticated routes
 router.post('/create', authMiddleware, shareController.createShareLink);
 router.delete('/delete/:token', authMiddleware, shareController.deleteShareLink);
+router.post('/protected', authMiddleware, shareController.createProtectedShareLink);
 
 // Public access to shared file
 router.get('/access/:token', shareController.accessShareLink);

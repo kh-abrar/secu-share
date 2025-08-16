@@ -234,3 +234,19 @@ exports.getSharedWithMe = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+exports.updateFileAccess = async (req, res) => {
+  try {
+    const { accessLevel } = req.body;
+    const file = await File.findOne({ _id: req.params.id, owner: req.userId });
+
+    if (!file) return res.status(404).json({ message: 'File not found' });
+
+    file.accessLevel = accessLevel;
+    await file.save();
+
+    res.json({ message: 'Access level updated', file });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
