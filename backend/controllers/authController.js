@@ -1,17 +1,22 @@
-// === controllers/authController.js ===
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const rateLimit = require('express-rate-limit');
 
 // Generate JWT
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d', algorithm: 'HS512'  });
 };
 
 // Register user
 exports.register = async (req, res) => {
   try {
-    console.log(req.body);
     const { email, password, name } = req.body;
+
+    // Password strength validation
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters long and include at least one letter and one number.' });
+    }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -23,8 +28,14 @@ exports.register = async (req, res) => {
 
     const token = generateToken(user._id);
 
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
     res.status(201).json({
-      token,
       user: { id: user._id, email: user.email, name: user.name },
     });
   } catch (error) {
@@ -32,6 +43,12 @@ exports.register = async (req, res) => {
   }
 };
 
+// Login rate limiter
+exports.loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: 'Too many login attempts. Please try again after 15 minutes.',
+});
 // Login user
 exports.login = async (req, res) => {
   try {
@@ -44,13 +61,24 @@ exports.login = async (req, res) => {
 
     const token = generateToken(user._id);
 
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
     res.json({
-      token,
       user: { id: user._id, email: user.email, name: user.name },
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
+};
+
+exports.logout = (req, res) => {
+  res.clearCookie('token');
+  res.status(200).json({ message: 'Logged out successfully' });
 };
 
 // Get current user
