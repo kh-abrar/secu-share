@@ -28,6 +28,10 @@ const shareLinkSchema = new mongoose.Schema({
     type: Number,
     default: null,
   },
+  // web crypto decryption
+  encryptionType: {type: String, default: null},
+  iv: {type: String, default: null},
+  encryptedKey: {type: String, default: null},
 }, {
   timestamps: true,
 });
