@@ -1,41 +1,59 @@
+// controllers/shareController.js
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 const ShareLink = require('../models/ShareLink');
 const File = require('../models/File');
+const User = require('../models/User');
 const { getSignedUrl } = require('../config/s3');
-const bcrypt = require('bcrypt');
 
 const generateToken = () => crypto.randomBytes(32).toString('hex');
 
 exports.createShareLink = async (req, res) => {
   try {
-    const { fileId, expiresIn, maxAccess } = req.body;
+    const { fileId, expiresIn, maxAccess, scope, emails, userIds } = req.body; // scope: 'public'|'restricted'
     const file = await File.findById(fileId);
     if (!file || file.owner.toString() !== req.userId.toString()) {
       return res.status(403).json({ message: 'File not found or access denied' });
     }
 
     const token = generateToken();
-    const expiresAt = expiresIn ? new Date(Date.now() + parseInt(expiresIn) * 1000) : null;
+    const expiresAt = expiresIn ? new Date(Date.now() + parseInt(expiresIn, 10) * 1000) : null;
 
-    const shareLink = new ShareLink({
+    let allowedEmails = [];
+    let allowedUsers = [];
+    if (scope === 'restricted') {
+      if (emails) {
+        try { allowedEmails = Array.isArray(emails) ? emails : JSON.parse(emails); } catch {}
+      }
+      if (userIds) {
+        const ids = Array.isArray(userIds) ? userIds : [];
+        allowedUsers = ids.filter(Boolean);
+      }
+    }
+
+    const shareLink = await ShareLink.create({
       token,
       file: file._id,
       createdBy: req.userId,
+      scope: scope === 'restricted' ? 'restricted' : 'public',
+      allowedUsers,
+      allowedEmails,
       expiresAt,
       maxAccess: maxAccess || null,
       encryptionType: file.encryptionType || null,
       iv: file.iv || null,
       encryptedKey: file.encryptedKey || null,
     });
-    await shareLink.save();
 
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-
     res.status(201).json({
       shareUrl: `${baseUrl}/api/share/access/${token}`,
       token,
       expiresAt,
       maxAccess,
+      scope: shareLink.scope,
+      allowedUsers: shareLink.allowedUsers,
+      allowedEmails: shareLink.allowedEmails,
     });
   } catch (error) {
     console.error('Create share link error:', error);
@@ -43,50 +61,101 @@ exports.createShareLink = async (req, res) => {
   }
 };
 
+exports.createProtectedShareLink = async (req, res) => {
+  try {
+    const { fileId, password, expiresIn, maxAccess, scope, emails, userIds } = req.body;
+
+    const file = await File.findById(fileId);
+    if (!file || file.owner.toString() !== req.userId.toString()) {
+      return res.status(403).json({ message: 'File not found or access denied' });
+    }
+
+    const token = generateToken();
+    const expiresAt = expiresIn ? new Date(Date.now() + parseInt(expiresIn, 10) * 1000) : null;
+    const passwordHash = password ? await bcrypt.hash(password, 10) : null;
+
+    let allowedEmails = [];
+    let allowedUsers = [];
+    if (scope === 'restricted') {
+      if (emails) {
+        try { allowedEmails = Array.isArray(emails) ? emails : JSON.parse(emails); } catch {}
+      }
+      if (userIds) {
+        const ids = Array.isArray(userIds) ? userIds : [];
+        allowedUsers = ids.filter(Boolean);
+      }
+    }
+
+    const shareLink = await ShareLink.create({
+      token,
+      file: file._id,
+      createdBy: req.userId,
+      scope: scope === 'restricted' ? 'restricted' : 'public',
+      allowedUsers,
+      allowedEmails,
+      passwordHash,
+      expiresAt,
+      maxAccess: maxAccess || null,
+      encryptionType: file.encryptionType || null,
+      iv: file.iv || null,
+      encryptedKey: file.encryptedKey || null,
+    });
+
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    res.status(201).json({
+      shareUrl: `${baseUrl}/api/share/access/${token}`,
+      token,
+      expiresAt,
+      maxAccess,
+      scope: shareLink.scope,
+      protected: !!password,
+    });
+  } catch (error) {
+    console.error('Create protected share link error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 exports.accessShareLink = async (req, res) => {
   try {
     const { token } = req.params;
-    const { password } = req.body;
-    const userId = req.userId; // if user is logged in, this will be set by auth middleware
+    const password = req.query.password || null; // GET accepts ?password=
+    const userId = req.userId || null;          // set by optionalAuth if present
+    const userEmail = (req.userEmail || '').toLowerCase();
 
     const link = await ShareLink.findOne({ token }).populate({
       path: 'file',
       populate: { path: 'owner', select: 'name email' }
     });
 
-    if (!link || !link.file) {
-      return res.status(404).json({ message: 'Share link not found' });
-    }
+    if (!link || !link.file) return res.status(404).json({ message: 'Share link not found' });
+    if (link.revokedAt) return res.status(410).json({ message: 'Link revoked' });
 
     const now = new Date();
-    if (link.expiresAt && now > link.expiresAt) {
-      return res.status(410).json({ message: 'Link expired' });
-    }
-
+    if (link.expiresAt && now > link.expiresAt) return res.status(410).json({ message: 'Link expired' });
     if (link.maxAccess !== null && link.accessCount >= link.maxAccess) {
       return res.status(403).json({ message: 'Max access limit reached' });
     }
 
-    // 🔐 Check password protection
+    // Password check
     if (link.passwordHash) {
-      if (!password) {
-        return res.status(401).json({ message: 'Password required' });
-      }
-      const isMatch = await bcrypt.compare(password, link.passwordHash);
-      if (!isMatch) {
-        return res.status(403).json({ message: 'Incorrect password' });
-      }
+      if (!password) return res.status(401).json({ message: 'Password required' });
+      const ok = await bcrypt.compare(password, link.passwordHash);
+      if (!ok) return res.status(403).json({ message: 'Incorrect password' });
     }
 
-    // ✅ Optionally add to sharedWith if user is logged in
-    if (userId && !link.file.sharedWith.includes(userId)) {
-      link.file.sharedWith.push(userId);
-      await link.file.save();
+    // Restricted check
+    if (link.scope === 'restricted') {
+      let ok = false;
+      if (userId && (link.allowedUsers || []).some(u => u.toString() === userId.toString())) ok = true;
+      if (!ok && userEmail && (link.allowedEmails || []).map(e => String(e).toLowerCase()).includes(userEmail)) ok = true;
+      if (!ok) return res.status(403).json({ message: 'Not allowed for this link' });
     }
 
     link.accessCount += 1;
     await link.save();
 
+    // Only file download supported here (if you later support folder links, return a listing/zip)
     const signedUrl = await getSignedUrl(link.file.filename, 300);
 
     res.json({
@@ -97,11 +166,7 @@ exports.accessShareLink = async (req, res) => {
         encryptionType: link.encryptionType,
         iv: link.iv,
         encryptedKey: link.encryptedKey,
-        owner: {
-          name: link.file.owner?.name,
-          email: link.file.owner?.email,
-        },
-        sharedWithMe: !!userId,
+        owner: { name: link.file.owner?.name, email: link.file.owner?.email },
       },
     });
   } catch (error) {
@@ -110,63 +175,21 @@ exports.accessShareLink = async (req, res) => {
   }
 };
 
-
 exports.deleteShareLink = async (req, res) => {
   try {
     const { token } = req.params;
     const link = await ShareLink.findOne({ token });
-
     if (!link || link.createdBy.toString() !== req.userId.toString()) {
       return res.status(404).json({ message: 'Share link not found or unauthorized' });
     }
 
-    await ShareLink.deleteOne({ token });
-    res.json({ message: 'Share link deleted' });
+    // Soft revoke (keeps audit trail)
+    link.revokedAt = new Date();
+    await link.save();
+
+    res.json({ message: 'Share link revoked' });
   } catch (error) {
     console.error('Delete share link error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-exports.createProtectedShareLink = async (req, res) => {
-  try {
-    const { fileId, password, expiresIn, maxAccess } = req.body;
-
-    const file = await File.findById(fileId);
-    if (!file || file.owner.toString() !== req.userId.toString()) {
-      return res.status(403).json({ message: 'File not found or access denied' });
-    }
-
-    const token = generateToken();
-    const expiresAt = expiresIn ? new Date(Date.now() + parseInt(expiresIn) * 1000) : null;
-
-    const passwordHash = password ? await bcrypt.hash(password, 10) : null;
-
-    const shareLink = new ShareLink({
-      token,
-      file: file._id,
-      createdBy: req.userId,
-      expiresAt,
-      maxAccess: maxAccess || null,
-      encryptionType: file.encryptionType || null,
-      iv: file.iv || null,
-      encryptedKey: file.encryptedKey || null,
-      passwordHash,
-    });
-
-    await shareLink.save();
-
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-
-    res.status(201).json({
-      shareUrl: `${baseUrl}/api/share/access/${token}`,
-      token,
-      expiresAt,
-      maxAccess,
-      protected: !!password,
-    });
-  } catch (error) {
-    console.error('Create protected share link error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

@@ -1,166 +1,170 @@
-import React, { useCallback, useMemo, useRef, useState } from "react"
-import { Upload, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-// If you use shadcn toasts, uncomment next line and use toast(...)
-// import { useToast } from "@/hooks/use-toast"
+// features/upload/components/UploadDropZone.tsx
+import { useCallback, useRef, useState } from "react";
+import { Upload, FolderOpen } from "lucide-react";
 
-type UploadDropzoneProps = {
-  onSelect: (files: File[]) => void
-  accept?: string[]               // e.g. ["image/png", "application/pdf"]
-  maxFiles?: number               // e.g. 5
-  maxSizeMB?: number              // per file, e.g. 50
-  className?: string
-}
+export type UploadDropzoneProps = {
+  onSelect?: (files: File[]) => void;
+  accept?: string[];
+  maxFiles?: number;
+  maxSizeMB?: number;
+  className?: string;
+  onUploaded?: (created: any[]) => void;
+  token?: string;
+};
 
 export default function UploadDropzone({
-  onSelect,
-  accept,
-  maxFiles = 10,
-  maxSizeMB = 100,
-  className,
+  onSelect, accept, maxFiles, maxSizeMB, className, onUploaded, token,
 }: UploadDropzoneProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [files, setFiles] = useState<File[]>([])
-  // const { toast } = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dirInputRef = useRef<HTMLInputElement>(null);
+  const [isHover, setIsHover] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const acceptSet = useMemo(() => (accept ? new Set(accept) : null), [accept])
-  const maxBytes = maxSizeMB * 1024 * 1024
+  const pickFiles = () => fileInputRef.current?.click();
+  const pickFolder = () => dirInputRef.current?.click();
 
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return "0 B"
-    const k = 1024
-    const sizes = ["B", "KB", "MB", "GB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`
-  }
+  const traverseFileTree = (entry: any, pathPrefix = ""): Promise<File[]> =>
+    new Promise((resolve) => {
+      if (entry.isFile) {
+        entry.file((file: File) => {
+          (file as any).webkitRelativePath = pathPrefix + file.name;
+          resolve([file]);
+        });
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        const entries: any[] = [];
+        const readEntries = () => {
+          dirReader.readEntries(async (batch: any[]) => {
+            if (!batch.length) {
+              const nested = await Promise.all(
+                entries.map((ent) => traverseFileTree(ent, pathPrefix + entry.name + "/"))
+              );
+              resolve(nested.flat());
+            } else {
+              entries.push(...batch);
+              readEntries();
+            }
+          });
+        };
+        readEntries();
+      } else resolve([]);
+    });
 
-  const validate = (picked: File[]): File[] => {
-    const errors: string[] = []
-    let selected = picked
-
-    if (selected.length + files.length > maxFiles) {
-      selected = selected.slice(0, Math.max(0, maxFiles - files.length))
-      errors.push(`You can upload up to ${maxFiles} files.`)
+  const validate = (incoming: File[]) => {
+    let files = incoming;
+    if (accept?.length) {
+      const allow = new Set(accept);
+      files = files.filter((f) => allow.has(f.type));
     }
+    if (maxSizeMB && maxSizeMB > 0) {
+      const maxBytes = maxSizeMB * 1024 * 1024;
+      files = files.filter((f) => f.size <= maxBytes);
+    }
+    if (maxFiles && maxFiles > 0) files = files.slice(0, maxFiles);
+    return files;
+  };
 
-    selected = selected.filter((f) => {
-      if (f.size > maxBytes) {
-        errors.push(`"${f.name}" exceeds ${maxSizeMB} MB.`)
-        return false
+  const uploadFiles = async (files: File[]) => {
+    if (!files.length) return;
+    const form = new FormData();
+    for (const f of files) {
+      form.append("files", f);
+      const rel = (f as any).webkitRelativePath || f.name;
+      form.append("relativePaths", rel);
+    }
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: form,
+    });
+    if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+    const json = await res.json();
+    onUploaded?.(json.created || []);
+  };
+
+  const handleFinal = async (files: File[]) => {
+    const vetted = validate(files);
+    if (!vetted.length) { setError("No files passed validation."); return; }
+    if (onSelect) onSelect(vetted);
+    else await uploadFiles(vetted);
+  };
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsHover(false);
+    setError(null);
+    setBusy(true);
+    try {
+      const dt = e.dataTransfer;
+      const items = dt.items;
+      let allFiles: File[] = [];
+
+      if (items && items.length && (items[0] as any).webkitGetAsEntry) {
+        const promises: Promise<File[]>[] = [];
+        for (let i = 0; i < items.length; i++) {
+          const entry = (items[i] as any).webkitGetAsEntry?.();
+          if (entry) promises.push(traverseFileTree(entry));
+        }
+        allFiles = (await Promise.all(promises)).flat();
+      } else {
+        allFiles = Array.from(dt.files);
       }
-      if (acceptSet && !acceptSet.has(f.type)) {
-        errors.push(`"${f.name}" type not allowed (${f.type || "unknown"}).`)
-        return false
-      }
-      return true
-    })
 
-    if (errors.length) {
-      // toast({ title: "Upload notice", description: errors.join(" "), variant: "destructive" })
-      console.warn("[UploadDropzone] validation:", errors.join(" "))
+      await handleFinal(allFiles);
+    } catch (err: any) {
+      setError(err?.message || "Upload failed.");
+    } finally {
+      setBusy(false);
     }
-    return selected
-  }
+  }, [onSelect]);
 
-  const addFiles = useCallback(
-    (picked: File[]) => {
-      const valid = validate(picked)
-      if (!valid.length) return
-      const next = [...files, ...valid]
-      setFiles(next)
-      onSelect(next)
-    },
-    [files, onSelect]
-  )
-
-  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const list = e.target.files
-    if (!list) return
-    addFiles(Array.from(list))
-    e.target.value = "" // allow re-picking same files
-  }
-
-  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(false)
-    if (e.dataTransfer.files?.length) {
-      addFiles(Array.from(e.dataTransfer.files))
-    }
-  }
-
-  const removeFile = (idx: number) => {
-    const next = files.filter((_, i) => i !== idx)
-    setFiles(next)
-    onSelect(next)
-  }
+  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.files ? Array.from(e.target.files) : [];
+    if (!raw.length) return;
+    setError(null);
+    setBusy(true);
+    try { await handleFinal(raw); }
+    catch (err: any) { setError(err?.message || "Upload failed."); }
+    finally { setBusy(false); e.target.value = ""; }
+  };
 
   return (
-    <div className={className}>
-      {/* Drop area */}
+    <div className={`w-full ${className ?? ""}`}>
       <div
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") inputRef.current?.click()
-        }}
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setIsDragging(true)
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={onDrop}
-        className={[
-          "flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition",
-          isDragging ? "border-accent bg-neutral-50" : "border-neutral-300",
-        ].join(" ")}
+        onDragOver={(e) => { e.preventDefault(); setIsHover(true); }}
+        onDragLeave={() => setIsHover(false)}
+        onDrop={handleDrop}
+        className={`border-2 border-dashed rounded-2xl p-8 text-center transition
+          ${isHover ? "border-blue-500 bg-blue-50/30" : "border-gray-300"}`}
       >
-        <Upload className="mb-2 h-6 w-6 text-neutral-400" />
-        <p className="text-sm text-neutral-600">
-          Drag & drop files here, or <span className="font-medium text-accent">browse</span>
-        </p>
-        <p className="mt-1 text-xs text-neutral-400">
-          {accept?.length ? `Accepts: ${accept.join(", ")}` : "Any file type"} · Max {maxFiles} files · {maxSizeMB} MB each
-        </p>
+        <Upload className="mx-auto mb-3" />
+        <p className="mb-2 font-medium">Drag & drop files or folders here</p>
+        <p className="text-sm text-gray-500 mb-4">We’ll preserve your folder structure</p>
 
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          onChange={onInputChange}
-          className="hidden"
-          // If you want browser-level filtering, you can pass accept as comma string (e.g. ".png,.pdf")
-          // accept={accept?.join(",")}
-        />
+        <div className="flex items-center justify-center gap-3">
+          <button onClick={pickFiles} className="px-4 py-2 rounded-xl border hover:bg-gray-50" disabled={busy} type="button">
+            Browse files
+          </button>
+          <button onClick={pickFolder} className="px-4 py-2 rounded-xl border hover:bg-gray-50 inline-flex items-center gap-2" disabled={busy} type="button">
+            <FolderOpen size={16} /> Browse folder
+          </button>
+        </div>
+
+        {busy && <p className="mt-3 text-sm">Processing…</p>}
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
-      {/* Selected list */}
-      {files.length > 0 && (
-        <div className="mt-4 space-y-2">
-          {files.map((f, idx) => (
-            <div key={f.name + idx} className="flex items-center justify-between rounded-md border px-3 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm">{f.name}</p>
-                <p className="text-xs text-neutral-500">{formatBytes(f.size)}</p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-neutral-500 hover:text-black"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  removeFile(idx)
-                }}
-                aria-label={`Remove ${f.name}`}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
+      <input
+          ref={dirInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={onPickFiles}
+          {...({ webkitdirectory: "", directory: "", mozdirectory: "" } as any)}
+       />
     </div>
-  )
+  );
 }

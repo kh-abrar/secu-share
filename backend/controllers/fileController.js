@@ -1,86 +1,174 @@
+// controllers/fileController.js
 const pdfParse = require('pdf-parse');
 const File = require('../models/File');
 const User = require('../models/User');
+const ShareLink = require('../models/ShareLink');
 const OpenAI = require('openai');
-const {
-  s3Client,
-  deleteFileFromS3,
-  getSignedUrl
-} = require('../config/s3');
-const {
-  GetObjectCommand
-} = require('@aws-sdk/client-s3');
+const { s3Client, deleteFileFromS3, getSignedUrl, uploadFileToS3 } = require('../config/s3');
+const { GetObjectCommand } = require('@aws-sdk/client-s3');
+const pathposix = require('path').posix;
+const crypto = require('crypto');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const BUCKET = process.env.AWS_S3_BUCKET;
 
-exports.uploadFile = async (req, res) => {
+/** Helpers */
+function splitRelative(rel) {
+  const safe = (rel || '').replace(/^\/+/, '').replace(/\\/g, '/');
+  const dir = pathposix.dirname(safe);
+  const base = pathposix.basename(safe);
+  const normDir = dir === '.' ? '/' : `/${dir.replace(/^\/?/, '').replace(/\/?$/, '')}/`;
+  return { dir: normDir, base };
+}
+
+async function ensureFolders(ownerId, fullDir) {
+  if (fullDir === '/') return;
+  const parts = fullDir.split('/').filter(Boolean);
+  let acc = '/';
+  for (const name of parts) {
+    const parentPath = acc;
+    const thisPath = `${acc}${name}/`;
+    await File.updateOne(
+      { owner: ownerId, type: 'folder', path: parentPath, name },
+      { $setOnInsert: { type: 'folder' } },
+      { upsert: true }
+    );
+    acc = thisPath;
+  }
+}
+
+function s3KeyFor(ownerId, dir, base) {
+  const key = `${ownerId}${dir}${base}`.replace(/\/{2,}/g, '/');
+  return key.startsWith('/') ? key.slice(1) : key;
+}
+
+function parseExpiry(expiry) {
+  if (!expiry || expiry === 'never') return null;
+  const n = parseInt(expiry);
+  if (Number.isNaN(n)) return null;
+  if (expiry.endsWith('h')) return new Date(Date.now() + n * 3600 * 1000);
+  if (expiry.endsWith('d')) return new Date(Date.now() + n * 24 * 3600 * 1000);
+  return null;
+}
+
+/** NEW: multi-file, folder-aware */
+exports.uploadMany = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded' });
+    const userId = req.userId;
+    const files = Array.isArray(req.files) ? req.files : [];
+    const relsBody = req.body.relativePaths;
+    const relativePaths = Array.isArray(relsBody) ? relsBody : (relsBody ? [relsBody] : []);
+
+    if (!files.length) return res.status(400).json({ message: 'No files uploaded' });
+    if (relativePaths.length && relativePaths.length !== files.length) {
+      return res.status(400).json({ message: 'relativePaths length mismatch' });
     }
 
-    const fileDoc = new File({
-      filename: req.file.key,
-      originalName: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      path: `s3://${process.env.AWS_S3_BUCKET}/${req.file.key}`,
-      owner: req.userId,
-      isPublic: req.body.isPublic === 'true',
-      encryptionType: req.body.encryptionType || null,
-      iv: req.body.iv || null,
-      encryptedKey: req.body.encryptedKey || null,
-    });
+    const results = [];
 
-    await fileDoc.save();
-
-    // Optional: PDF summarization
-    if (
-      req.file.mimetype === 'application/pdf' &&
-      req.file.size <= 2 * 1024 * 1024 &&
-      process.env.OPENAI_API_KEY
-    ) {
-      try {
-        const getObjectCommand = new GetObjectCommand({
-          Bucket: process.env.AWS_S3_BUCKET,
-          Key: req.file.key,
-        });
-
-        const s3Response = await s3Client.send(getObjectCommand);
-        const chunks = [];
-        for await (const chunk of s3Response.Body) {
-          chunks.push(chunk);
-        }
-        const pdfBuffer = Buffer.concat(chunks);
-        const pdfData = await pdfParse(pdfBuffer);
-
-        const inputText = pdfData.text.slice(0, 10000);
-
-        const completion = await openai.chat.completions.create({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: 'Summarize the following PDF text:' },
-            { role: 'user', content: inputText },
-          ],
-          temperature: 0.5,
-        });
-
-        fileDoc.aiSummary = completion.choices[0].message.content;
-        await fileDoc.save();
-      } catch (aiError) {
-        console.error('OpenAI summarization failed:', aiError.message);
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const rel = relativePaths[i] || f.originalname;
+      const { dir, base } = splitRelative(rel);
+      if (!base || base.includes('/')) {
+        return res.status(400).json({ message: `Invalid filename for index ${i}` });
       }
+
+      await ensureFolders(userId, dir);
+
+      const key = s3KeyFor(userId, dir, base);
+      await uploadFileToS3(f.buffer, key, f.mimetype || 'application/octet-stream');
+
+      const fileDoc = await File.create({
+        type: 'file',
+        name: base,
+        path: dir,
+        owner: userId,
+        filename: key,
+        originalName: f.originalname,
+        mimetype: f.mimetype,
+        size: f.size,
+        encryptionType: req.body.encryptionType || null,
+        iv: req.body.iv || null,
+        encryptedKey: req.body.encryptedKey || null,
+        isPublic: false,
+        accessLevel: 'private',
+      });
+
+      // Optional tiny-PDF summary
+      if (f.mimetype === 'application/pdf' && f.size <= 2 * 1024 * 1024 && process.env.OPENAI_API_KEY) {
+        try {
+          const s3Resp = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+          const chunks = [];
+          for await (const chunk of s3Resp.Body) chunks.push(chunk);
+          const pdfData = await pdfParse(Buffer.concat(chunks));
+          const inputText = (pdfData.text || '').slice(0, 10000);
+
+          const completion = await openai.chat.completions.create({
+            model: 'gpt-3.5-turbo',
+            messages: [
+              { role: 'system', content: 'Summarize the following PDF text:' },
+              { role: 'user', content: inputText },
+            ],
+            temperature: 0.5,
+          });
+
+          fileDoc.aiSummary = completion.choices?.[0]?.message?.content ?? null;
+          await fileDoc.save();
+        } catch (aiError) {
+          console.error('OpenAI summarization failed:', aiError.message);
+        }
+      }
+
+      results.push({
+        id: fileDoc._id,
+        name: fileDoc.name,
+        path: fileDoc.path,
+        filename: fileDoc.filename,
+      });
     }
 
-    res.status(201).json(fileDoc);
+    // Optional: auto-create a share link based on UploadModal inputs
+    const shareType = req.body.shareType; // "public" | "private"
+    const emailsRaw = req.body.emails;    // JSON string when private
+    const expiry = parseExpiry(req.body.expiry); // "24h" | "7d" | "never"
+
+    let link = null;
+    if (shareType === 'public' || shareType === 'private') {
+      let allowedEmails = [];
+      if (shareType === 'private' && emailsRaw) {
+        try { allowedEmails = JSON.parse(emailsRaw) || []; } catch {}
+      }
+      const token = crypto.randomBytes(32).toString('hex');
+      link = await ShareLink.create({
+        token,
+        file: results[0]?.id, // link first uploaded file (adjust if you want a folder link instead)
+        createdBy: userId,
+        scope: shareType === 'public' ? 'public' : 'restricted',
+        allowedEmails,
+        expiresAt: expiry,
+        maxAccess: null,
+      });
+    }
+
+    res.status(201).json({
+      created: results,
+      shareLink: link
+        ? {
+            token: link.token,
+            url: `${process.env.BASE_URL || `${req.protocol}://${req.get('host')}`}/api/share/access/${link.token}`,
+            scope: link.scope,
+            expiresAt: link.expiresAt,
+          }
+        : null,
+    });
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ message: 'Upload failed', error: error.message });
   }
 };
 
+/** Unchanged APIs — with small safety fixes */
 exports.getUserFiles = async (req, res) => {
   try {
     const files = await File.find({ owner: req.userId }).sort({ createdAt: -1 });
@@ -96,7 +184,7 @@ exports.downloadFile = async (req, res) => {
     const hasAccess =
       file &&
       (file.owner.toString() === req.userId.toString() ||
-        (Array.isArray(file.sharedWith) && file.sharedWith.includes(req.userId)));
+        (Array.isArray(file.sharedWith) && file.sharedWith.some(id => id.toString() === req.userId.toString())));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'File not found or access denied' });
@@ -122,9 +210,7 @@ exports.downloadFile = async (req, res) => {
 exports.deleteFile = async (req, res) => {
   try {
     const file = await File.findOne({ _id: req.params.id, owner: req.userId });
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
-    }
+    if (!file) return res.status(404).json({ message: 'File not found' });
 
     try {
       await deleteFileFromS3(file.filename);
@@ -151,18 +237,13 @@ exports.shareWithUser = async (req, res) => {
     }
 
     let targetUser = null;
+    if (targetUserId) targetUser = await User.findById(targetUserId);
+    else if (targetEmail) targetUser = await User.findOne({ email: String(targetEmail).toLowerCase() });
 
-    if (targetUserId) {
-      targetUser = await User.findById(targetUserId);
-    } else if (targetEmail) {
-      targetUser = await User.findOne({ email: targetEmail.toLowerCase() });
-    }
+    if (!targetUser) return res.status(404).json({ message: 'Target user not found' });
 
-    if (!targetUser) {
-      return res.status(404).json({ message: 'Target user not found' });
-    }
-
-    if (!file.sharedWith.includes(targetUser._id)) {
+    const exists = (file.sharedWith || []).some(id => id.toString() === targetUser._id.toString());
+    if (!exists) {
       file.sharedWith.push(targetUser._id);
       await file.save();
     }
@@ -172,7 +253,7 @@ exports.shareWithUser = async (req, res) => {
     console.error('Error sharing file:', error);
     res.status(500).json({ message: 'Server error' });
   }
-}
+};
 
 exports.unshareWithUser = async (req, res) => {
   try {
@@ -184,18 +265,13 @@ exports.unshareWithUser = async (req, res) => {
     }
 
     let targetUser = null;
-    if (targetUserId) {
-      targetUser = await User.findById(targetUserId);
-    } else if (targetEmail) {
-      targetUser = await User.findOne({ email: targetEmail.toLowerCase() });
-    }
+    if (targetUserId) targetUser = await User.findById(targetUserId);
+    else if (targetEmail) targetUser = await User.findOne({ email: String(targetEmail).toLowerCase() });
 
-    if (!targetUser) {
-      return res.status(404).json({ message: 'Target user not found' });
-    }
+    if (!targetUser) return res.status(404).json({ message: 'Target user not found' });
 
     const userIdStr = targetUser._id.toString();
-    file.sharedWith = file.sharedWith.filter(id => id.toString() !== userIdStr);
+    file.sharedWith = (file.sharedWith || []).filter(id => id.toString() !== userIdStr);
     await file.save();
 
     res.json({ message: `Access revoked from ${targetUser.email}` });
@@ -208,7 +284,7 @@ exports.unshareWithUser = async (req, res) => {
 exports.getSharedWithMe = async (req, res) => {
   try {
     const files = await File.find({ sharedWith: req.userId })
-      .populate('owner', 'name email') // Fetch owner name & email
+      .populate('owner', 'name email')
       .sort({ createdAt: -1 });
 
     const result = files.map(file => ({
@@ -239,7 +315,6 @@ exports.updateFileAccess = async (req, res) => {
   try {
     const { accessLevel } = req.body;
     const file = await File.findOne({ _id: req.params.id, owner: req.userId });
-
     if (!file) return res.status(404).json({ message: 'File not found' });
 
     file.accessLevel = accessLevel;
