@@ -24,8 +24,44 @@ const upload = multer({
   },
 });
 
-// Supports both flat files and folders (via relativePaths[])
-router.post('/upload', authMiddleware, uploadLimiter, upload.array('files'), fileController.uploadMany);
+/**
+ * Normalizer middleware:
+ * - Accept both `file` and `files` field names
+ * - Flatten to req.files array
+ * - Normalize relativePaths:
+ *    • supports multiple form parts with key 'relativePaths'
+ *    • supports 'relativePaths[]'
+ *    • supports 'relativePathsJson' with a JSON array string
+ *    • supports single string value (will be wrapped to array in controller)
+ */
+function normalizeUploadFields(req, res, next) {
+  const out = [];
+  if (Array.isArray(req.files?.files)) out.push(...req.files.files);
+  if (Array.isArray(req.files?.file)) out.push(...req.files.file);
+  if (Array.isArray(req.files)) out.push(...req.files); // in case upload.any() is used elsewhere
+
+  req.files = out;
+
+  // Normalize relativePaths variants into req.body.relativePaths (string|array|stringified JSON)
+  if (req.body && req.body['relativePaths[]'] && !req.body.relativePaths) {
+    req.body.relativePaths = req.body['relativePaths[]'];
+  }
+  // Nothing else to do here; controller will finish parsing.
+  next();
+}
+
+// Accept both single and multiple file fields; preserve folder structure via relativePaths.
+router.post(
+  '/upload',
+  authMiddleware,
+  uploadLimiter,
+  upload.fields([
+    { name: 'files', maxCount: 20000 }, // folder uploads can be big
+    { name: 'file',  maxCount: 1 },     // single file convenience
+  ]),
+  normalizeUploadFields,
+  fileController.uploadMany
+);
 
 router.get('/', authMiddleware, fileController.getUserFiles);
 router.delete('/:id', authMiddleware, fileController.deleteFile);
@@ -33,5 +69,9 @@ router.get('/download/:id', authMiddleware, fileController.downloadFile);
 router.post('/share', authMiddleware, fileController.shareWithUser);
 router.post('/unshare', authMiddleware, fileController.unshareWithUser);
 router.get('/shared-with-me', authMiddleware, fileController.getSharedWithMe);
+
+// New endpoints
+router.get('/list', authMiddleware, fileController.listByPath);
+router.post('/folder', authMiddleware, fileController.createFolder);
 
 module.exports = router;

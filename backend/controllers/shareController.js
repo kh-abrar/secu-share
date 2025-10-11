@@ -155,7 +155,12 @@ exports.accessShareLink = async (req, res) => {
     link.accessCount += 1;
     await link.save();
 
-    // Only file download supported here (if you later support folder links, return a listing/zip)
+    // Check if this is a folder link
+    if (link.file.type === 'folder') {
+      return res.status(400).json({ message: 'Folder links not implemented' });
+    }
+
+    // File download
     const signedUrl = await getSignedUrl(link.file.filename, 300);
 
     res.json({

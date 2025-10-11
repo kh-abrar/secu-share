@@ -12,7 +12,12 @@ export const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <DashboardHome /> },
-      { path: "app", element: <DashboardHome /> },           // placeholder
+      { path: "dashboard", element: <DashboardHome /> },
+      { path: "dashboard/my-files", element: <div>My Files</div> },
+      { path: "dashboard/shared", element: <div>Shared with Me</div> },
+      { path: "dashboard/upload", element: <div>Upload</div> },
+      // Legacy routes for backward compatibility
+      { path: "app", element: <DashboardHome /> },
       { path: "app/my-files", element: <div>My Files</div> },
       { path: "app/shared", element: <div>Shared with Me</div> },
       { path: "app/upload", element: <div>Upload</div> },

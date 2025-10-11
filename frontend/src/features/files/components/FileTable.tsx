@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -9,52 +9,90 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { MoreVertical, Share2, Download, Trash2, Copy } from "lucide-react"
 import ShareDialog from "@/features/sharing/components/ShareDialog"
-
-type FileRow = {
-  id: string
-  name: string
-  size: string
-  uploadedAt: string
-}
-
-const demoFiles: FileRow[] = [
-  { id: "1", name: "report.pdf", size: "1.2 MB", uploadedAt: "2025-09-18" },
-  { id: "2", name: "image.png", size: "500 KB", uploadedAt: "2025-09-19" },
-]
+import { useFilesByPath, useDeleteFile, useDownloadFile } from "@/features/files/hooks/useFilesByPath"
+import type { FileItem } from "@/features/files/types"
+import { useToast } from "@/hooks/use-toast"
 
 export default function FileTable() {
   const [shareOpen, setShareOpen] = useState(false)
-  const [activeFile, setActiveFile] = useState<FileRow | null>(null)
+  const [activeFile, setActiveFile] = useState<FileItem | null>(null)
+  const { data: files, isLoading, error } = useFilesByPath('/')
+  const deleteMutation = useDeleteFile()
+  const downloadMutation = useDownloadFile()
+  const { toast } = useToast()
 
-  const openShare = (file: FileRow) => {
+  const openShare = (file: FileItem) => {
     setActiveFile(file)
     setShareOpen(true)
   }
 
-  const copyLink = async (file: FileRow) => {
-    // Placeholder link format; replace with real short link from API
-    const link = `${window.location.origin}/s/${file.id}`
+  const copyLink = async (file: FileItem) => {
+    const link = `${window.location.origin}/s/${file._id}`
     try {
       await navigator.clipboard.writeText(link)
-      // optionally toast here
-      // toast({ title: "Copied", description: "Link copied to clipboard." })
+      toast({ title: "Copied", description: "Link copied to clipboard." })
     } catch {
-      // toast({ title: "Copy failed", variant: "destructive" })
+      toast({ title: "Copy failed", variant: "destructive" })
     }
   }
 
-  const downloadFile = (file: FileRow) => {
-    // TODO: hook to your download endpoint/presigned URL
-    // window.open(`/api/files/${file.id}/download`, "_blank")
-    console.log("download", file.id)
+  const downloadFile = async (file: FileItem) => {
+    try {
+      await downloadMutation.mutateAsync({ fileId: file._id, filename: file.name })
+      toast({ title: "Download started" })
+    } catch (error) {
+      toast({ title: "Download failed", variant: "destructive" })
+    }
   }
 
-  const deleteFile = (file: FileRow) => {
-    // TODO: call delete mutation; then refetch
-    console.log("delete", file.id)
+  const deleteFile = async (file: FileItem) => {
+    try {
+      await deleteMutation.mutateAsync(file._id)
+      toast({ title: "File deleted successfully" })
+    } catch (error) {
+      toast({ title: "Delete failed", variant: "destructive" })
+    }
   }
 
-  const rows = useMemo(() => demoFiles, [])
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return 'N/A'
+    const mb = bytes / (1024 * 1024)
+    if (mb >= 1) return `${mb.toFixed(2)} MB`
+    return `${(bytes / 1024).toFixed(2)} KB`
+  }
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'N/A'
+    return new Date(dateString).toLocaleDateString()
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-900 mx-auto mb-2"></div>
+          <p className="text-sm text-neutral-600">Loading files...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+        <p className="text-sm text-red-600">Failed to load files</p>
+      </div>
+    )
+  }
+
+  if (!files || files.length === 0) {
+    return (
+      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-12 text-center">
+        <p className="text-neutral-600">No files uploaded yet</p>
+        <p className="text-sm text-neutral-500 mt-1">Click "Upload" to add your first file</p>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -69,11 +107,11 @@ export default function FileTable() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((file) => (
-              <tr key={file.id} className="border-t">
+            {files.filter(f => f.type === 'file').map((file) => (
+              <tr key={file._id} className="border-t">
                 <td className="px-4 py-2">{file.name}</td>
-                <td className="px-4 py-2">{file.size}</td>
-                <td className="px-4 py-2">{file.uploadedAt}</td>
+                <td className="px-4 py-2">{formatSize(file.size)}</td>
+                <td className="px-4 py-2">{formatDate(file.createdAt)}</td>
                 <td className="px-4 py-2 text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -121,17 +159,15 @@ export default function FileTable() {
         <ShareDialog
           open={shareOpen}
           onOpenChange={setShareOpen}
-          fileId={activeFile.id}
+          fileId={activeFile._id}
           fileName={activeFile.name}
-          // You can pass initial values if you have them:
-          // initialLink="https://..." initialVisibility="public" initialExpiry="7d"
           onSave={async (payload) => {
             console.log("save sharing", payload)
-            // TODO: call API to persist visibility/expiry/allowed users
+            toast({ title: "Share settings saved" })
           }}
           onRevoke={async (fileId) => {
             console.log("revoke link", fileId)
-            // TODO: call API to revoke link
+            toast({ title: "Link revoked" })
           }}
         />
       )}

@@ -3,13 +3,13 @@ const pdfParse = require('pdf-parse');
 const File = require('../models/File');
 const User = require('../models/User');
 const ShareLink = require('../models/ShareLink');
-const OpenAI = require('openai');
+// const OpenAI = require('openai');
 const { s3Client, deleteFileFromS3, getSignedUrl, uploadFileToS3 } = require('../config/s3');
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const pathposix = require('path').posix;
 const crypto = require('crypto');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const BUCKET = process.env.AWS_S3_BUCKET;
 
 /** Helpers */
@@ -51,24 +51,70 @@ function parseExpiry(expiry) {
   return null;
 }
 
-/** NEW: multi-file, folder-aware */
+/**
+ * Robust parser for relativePaths supporting:
+ *  - array of fields named 'relativePaths'
+ *  - array of fields named 'relativePaths[]'
+ *  - single string 'relativePaths'
+ *  - JSON array in 'relativePathsJson' or when 'relativePaths' starts with '['
+ */
+function parseRelativePaths(body) {
+  if (!body) return [];
+  let rels = body.relativePaths;
+
+  // If client sent as JSON string in 'relativePathsJson'
+  if (!rels && typeof body.relativePathsJson === 'string') {
+    try { return JSON.parse(body.relativePathsJson) || []; } catch { return []; }
+  }
+
+  // If client sent multiple parts: express will make it an array already
+  if (Array.isArray(rels)) return rels;
+
+  if (typeof rels === 'string') {
+    const s = rels.trim();
+    if (s.startsWith('[')) {
+      try { return JSON.parse(s) || []; } catch { return []; }
+    }
+    // single string will be wrapped later in controller to align with files.length
+    return [s];
+  }
+
+  return [];
+}
+
+/** NEW: multi-file, folder-aware + accepts both 'file' and 'files' field names */
 exports.uploadMany = async (req, res) => {
   try {
     const userId = req.userId;
     const files = Array.isArray(req.files) ? req.files : [];
-    const relsBody = req.body.relativePaths;
-    const relativePaths = Array.isArray(relsBody) ? relsBody : (relsBody ? [relsBody] : []);
+    const relativePathsRaw = parseRelativePaths(req.body);
 
     if (!files.length) return res.status(400).json({ message: 'No files uploaded' });
-    if (relativePaths.length && relativePaths.length !== files.length) {
+
+    // If provided, count must match. If not provided, we’ll fall back to originalname.
+    if (relativePathsRaw.length && relativePathsRaw.length !== files.length) {
       return res.status(400).json({ message: 'relativePaths length mismatch' });
     }
+
+    // Optional: parent path prefix to drop files into (e.g. current folder in UI)
+    // Must start and end with '/' if present; normalize lightly
+    let parentPath = req.body.parentPath || '/';
+    if (!parentPath.startsWith('/')) parentPath = '/' + parentPath;
+    if (!parentPath.endsWith('/')) parentPath = parentPath + '/';
 
     const results = [];
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      const rel = relativePaths[i] || f.originalname;
+
+      // Use provided relative path or fallback to original name (flat upload)
+      let rel = relativePathsRaw[i] || f.originalname;
+
+      // If user specified a parentPath, prefix it unless rel already includes subfolders
+      if (parentPath !== '/' && rel && !rel.startsWith('/')) {
+        rel = (parentPath.replace(/^\//, '') + rel).replace(/\\/g, '/');
+      }
+
       const { dir, base } = splitRelative(rel);
       if (!base || base.includes('/')) {
         return res.status(400).json({ message: `Invalid filename for index ${i}` });
@@ -95,30 +141,30 @@ exports.uploadMany = async (req, res) => {
         accessLevel: 'private',
       });
 
-      // Optional tiny-PDF summary
-      if (f.mimetype === 'application/pdf' && f.size <= 2 * 1024 * 1024 && process.env.OPENAI_API_KEY) {
-        try {
-          const s3Resp = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
-          const chunks = [];
-          for await (const chunk of s3Resp.Body) chunks.push(chunk);
-          const pdfData = await pdfParse(Buffer.concat(chunks));
-          const inputText = (pdfData.text || '').slice(0, 10000);
+      // // Optional tiny-PDF summary (kept commented)
+      // if (f.mimetype === 'application/pdf' && f.size <= 2 * 1024 * 1024 && process.env.OPENAI_API_KEY) {
+      //   try {
+      //     const s3Resp = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+      //     const chunks = [];
+      //     for await (const chunk of s3Resp.Body) chunks.push(chunk);
+      //     const pdfData = await pdfParse(Buffer.concat(chunks));
+      //     const inputText = (pdfData.text || '').slice(0, 10000);
 
-          const completion = await openai.chat.completions.create({
-            model: 'gpt-3.5-turbo',
-            messages: [
-              { role: 'system', content: 'Summarize the following PDF text:' },
-              { role: 'user', content: inputText },
-            ],
-            temperature: 0.5,
-          });
+      //     const completion = await openai.chat.completions.create({
+      //       model: 'gpt-3.5-turbo',
+      //       messages: [
+      //         { role: 'system', content: 'Summarize the following PDF text:' },
+      //         { role: 'user', content: inputText },
+      //       ],
+      //       temperature: 0.5,
+      //     });
 
-          fileDoc.aiSummary = completion.choices?.[0]?.message?.content ?? null;
-          await fileDoc.save();
-        } catch (aiError) {
-          console.error('OpenAI summarization failed:', aiError.message);
-        }
-      }
+      //     fileDoc.aiSummary = completion.choices?.[0]?.message?.content ?? null;
+      //     await fileDoc.save();
+      //   } catch (aiError) {
+      //     console.error('OpenAI summarization failed:', aiError.message);
+      //   }
+      // }
 
       results.push({
         id: fileDoc._id,
@@ -142,7 +188,7 @@ exports.uploadMany = async (req, res) => {
       const token = crypto.randomBytes(32).toString('hex');
       link = await ShareLink.create({
         token,
-        file: results[0]?.id, // link first uploaded file (adjust if you want a folder link instead)
+        file: results[0]?.id, // currently links first uploaded file
         createdBy: userId,
         scope: shareType === 'public' ? 'public' : 'restricted',
         allowedEmails,
@@ -322,6 +368,34 @@ exports.updateFileAccess = async (req, res) => {
 
     res.json({ message: 'Access level updated', file });
   } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.listByPath = async (req, res) => {
+  try {
+    let p = String(req.query.path || '/');
+    if (!p.startsWith('/')) p = '/' + p;
+    if (!p.endsWith('/')) p = p + '/';
+    const items = await File.find({ owner: req.userId, path: p }).sort({ type: 1, name: 1 });
+    res.json({ items });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.createFolder = async (req, res) => {
+  try {
+    let { name, path } = req.body || {};
+    name = String(name || '').trim();
+    if (!name) return res.status(400).json({ message: 'Missing name' });
+    path = path || '/';
+    if (!path.startsWith('/')) path = '/' + path;
+    if (!path.endsWith('/')) path = path + '/';
+    const doc = await File.create({ type: 'folder', name, path, owner: req.userId });
+    res.status(201).json(doc);
+  } catch (e) {
+    if (e.code === 11000) return res.status(409).json({ message: 'Folder already exists' });
     res.status(500).json({ message: 'Server error' });
   }
 };

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -23,9 +23,14 @@ type FormValues = z.infer<typeof schema>;
 
 /* ---------- page ---------- */
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, error, clearError } = useAuth();
   const navigate = useNavigate();
   const [showPw, setShowPw] = useState(false);
+
+  // Clear error when component unmounts
+  useEffect(() => {
+    return () => clearError();
+  }, [clearError]);
 
   const {
     register,
@@ -34,8 +39,13 @@ export default function LoginPage() {
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
   const onSubmit = async (values: FormValues) => {
-    await login({ email: values.email, password: values.password });
-    navigate("/app");
+    try {
+      await login({ email: values.email, password: values.password });
+      navigate("/dashboard");
+    } catch (error) {
+      // Error is handled by the auth store and displayed in the form
+      console.error("Login failed:", error);
+    }
   };
 
   return (
@@ -52,6 +62,13 @@ export default function LoginPage() {
             </h1>
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+              {/* Error message */}
+              {error && (
+                <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
+              
               {/* Email */}
               <div>
                 <Label htmlFor="email">Email</Label>

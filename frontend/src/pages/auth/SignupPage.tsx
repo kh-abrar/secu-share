@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/app/providers/auth-provider";
@@ -13,7 +13,13 @@ const inputCls =
 
 
 export default function SignupPage() {
-  const { signup, loading } = useAuth();
+  const { signup, loading, error, clearError } = useAuth();
+  const navigate = useNavigate();
+
+  // Clear error when component unmounts
+  useEffect(() => {
+    return () => clearError();
+  }, [clearError]);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -39,8 +45,13 @@ export default function SignupPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    await signup({ email, password: pw });
-    // Optionally persist/display name later in your profile flow
+    try {
+      await signup({ email, password: pw, name });
+      navigate("/dashboard");
+    } catch (error) {
+      // Error is handled by the auth store and displayed in the form
+      console.error("Signup failed:", error);
+    }
   }
 
   return (
@@ -57,6 +68,13 @@ export default function SignupPage() {
             </h1>
 
             <form onSubmit={onSubmit} className="space-y-4" noValidate>
+              {/* Error message */}
+              {error && (
+                <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
+              
               {/* Name */}
               <div className="space-y-1.5">
                 <label htmlFor="name" className="text-sm font-medium">Name</label>

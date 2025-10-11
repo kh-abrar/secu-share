@@ -1,66 +1,66 @@
 // src/app/providers/auth-provider.tsx
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo } from "react";
 import type { PropsWithChildren } from "react";
+import { useAuthStore } from "@/hooks/useAuth";
 
-type User = { id: string; email: string } | null;
-type Credentials = { email: string; password: string };
+type User = { id: string; email: string; name?: string } | null;
+type Credentials = { email: string; password: string; name?: string };
 
 type AuthContextValue = {
   user: User;
   loading: boolean;
+  isAuthenticated: boolean;
+  error: string | null;
   signup: (c: Credentials) => Promise<void>;
   login: (c: Credentials) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
+  clearError: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [user, setUser] = useState<User>(null);
-  const [loading, setLoading] = useState(false);
+  const { 
+    user, 
+    loading, 
+    isAuthenticated, 
+    error,
+    login: storeLogin, 
+    logout: storeLogout, 
+    register,
+    fetchUser,
+    clearError 
+  } = useAuthStore();
 
-  // Restore session (demo)
+  // Fetch current user on mount to check if session is active
   useEffect(() => {
-    const raw = localStorage.getItem("auth:user");
-    if (raw) {
-      try { setUser(JSON.parse(raw)); } catch {}
-    }
-  }, []);
+    fetchUser();
+  }, [fetchUser]);
 
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  async function signup({ email }: Credentials) {
-    setLoading(true);
-    try {
-      await sleep(400); // simulate network
-      const u = { id: crypto.randomUUID(), email };
-      setUser(u);
-      localStorage.setItem("auth:user", JSON.stringify(u));
-    } finally {
-      setLoading(false);
-    }
+  async function signup(credentials: Credentials) {
+    await register(credentials);
   }
 
-  async function login({ email }: Credentials) {
-    setLoading(true);
-    try {
-      await sleep(300); // simulate network
-      const u = { id: crypto.randomUUID(), email };
-      setUser(u);
-      localStorage.setItem("auth:user", JSON.stringify(u));
-    } finally {
-      setLoading(false);
-    }
+  async function login(credentials: Credentials) {
+    await storeLogin(credentials);
   }
 
-  function logout() {
-    setUser(null);
-    localStorage.removeItem("auth:user");
+  async function logout() {
+    await storeLogout();
   }
 
   const value = useMemo(
-    () => ({ user, loading, signup, login, logout }),
-    [user, loading]
+    () => ({ 
+      user, 
+      loading, 
+      isAuthenticated,
+      error,
+      signup, 
+      login, 
+      logout,
+      clearError 
+    }),
+    [user, loading, isAuthenticated, error, clearError]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

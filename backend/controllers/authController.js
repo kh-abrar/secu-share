@@ -1,11 +1,5 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const rateLimit = require('express-rate-limit');
-
-// Generate JWT
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d', algorithm: 'HS512'  });
-};
 
 // Register user
 exports.register = async (req, res) => {
@@ -28,17 +22,12 @@ exports.register = async (req, res) => {
     const user = new User({ email, password, name });
     await user.save();
 
-    const token = generateToken(user._id);
-
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'Strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    req.session.user = { id: user._id.toString(), email: user.email, name: user.name };
 
     res.status(201).json({
-      user: { id: user._id, email: user.email, name: user.name },
+      id: user._id, 
+      email: user.email, 
+      name: user.name
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -51,48 +40,34 @@ exports.loginLimiter = rateLimit({
   max: 5,
   message: 'Too many login attempts. Please try again after 15 minutes.',
 });
+
 // Login user
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
+    const user = await User.findOne({ email: String(email).toLowerCase() });
+    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+    const ok = await user.comparePassword(password || '');
+    if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const user = await User.findOne({ email });
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    const token = generateToken(user._id);
-
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'Strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
-
-    res.json({
-      user: { id: user._id, email: user.email, name: user.name },
-    });
+    req.session.user = { id: user._id.toString(), email: user.email, name: user.name };
+    res.json({ id: user._id, email: user.email, name: user.name });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
 exports.logout = (req, res) => {
-  res.clearCookie('token');
-  res.status(200).json({ message: 'Logged out successfully' });
+  req.session.destroy(() => {
+    res.clearCookie('sid');
+    res.json({ ok: true });
+  });
 };
 
 // Get current user
-exports.getMe = async (req, res) => {
-    try {
-      const user = await User.findById(req.userId).select('-password');
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-      res.json(user);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  };
+exports.me = (req, res) => {
+  const u = req.session?.user;
+  if (!u) return res.status(200).json(null);
+  res.json(u);
+};
   

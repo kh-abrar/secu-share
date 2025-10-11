@@ -1,9 +1,6 @@
 const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const dotenv = require('dotenv');
-
-dotenv.config();
 
 const s3Client = new S3Client({
   credentials: {

@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import UploadDropzone from "@/features/upload/components/UploadDropZone";
+import api from "@/libs/api";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ShareType = "public" | "private";
 
@@ -18,6 +21,8 @@ export default function UploadModal() {
   const [expiry, setExpiry] = useState<"24h" | "7d" | "never">("7d");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const handleAddEmail = () => {
     const mail = emailInput.trim().toLowerCase();
@@ -35,6 +40,11 @@ export default function UploadModal() {
   const handleUpload = async () => {
     if (!selected.length) return;
     setBusy(true); setError(null);
+    
+    const fileCount = selected.length;
+    const fileNames = selected.slice(0, 3).map(f => f.name).join(", ");
+    const displayNames = fileCount > 3 ? `${fileNames} and ${fileCount - 3} more` : fileNames;
+    
     try {
       const form = new FormData();
       for (const f of selected) {
@@ -42,16 +52,38 @@ export default function UploadModal() {
         const rel = (f as any).webkitRelativePath || f.name;
         form.append("relativePaths", rel);
       }
+      form.append("parentPath", "/"); // Upload to root path
       form.append("expiry", expiry);
       form.append("shareType", shareType);
       if (shareType === "private") form.append("emails", JSON.stringify(emails));
 
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+      await api.post("/files/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
-      setOpen(false); resetAll();
+      // Invalidate and refetch files to show newly uploaded files
+      await queryClient.invalidateQueries({ queryKey: ['files'] });
+
+      // Show success toast with animation
+      toast({
+        title: "✅ Upload Successful!",
+        description: `${fileCount} file${fileCount > 1 ? 's' : ''} uploaded successfully: ${displayNames}`,
+        duration: 5000,
+      });
+
+      setOpen(false); 
+      resetAll();
     } catch (e: any) {
-      setError(e?.message || "Upload failed.");
+      const errorMsg = e?.response?.data?.message || e?.message || "Upload failed.";
+      setError(errorMsg);
+      
+      // Show error toast with animation
+      toast({
+        title: "❌ Upload Failed",
+        description: errorMsg,
+        variant: "destructive",
+        duration: 5000,
+      });
     } finally {
       setBusy(false);
     }
