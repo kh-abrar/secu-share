@@ -251,17 +251,24 @@ exports.downloadFile = async (req, res) => {
       return res.status(403).json({ message: 'File not found or access denied' });
     }
 
-    const signedUrl = await getSignedUrl(file.filename, 300);
-    res.json({
-      downloadUrl: signedUrl,
-      metadata: {
-        encryptionType: file.encryptionType,
-        iv: file.iv,
-        encryptedKey: file.encryptedKey,
-        originalName: file.originalName,
-        mimetype: file.mimetype,
-      },
+    // Stream the file directly from S3 to avoid CORS issues
+    const { s3Client } = require('../config/s3');
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    
+    const command = new GetObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET,
+      Key: file.filename,
     });
+
+    const s3Response = await s3Client.send(command);
+    
+    // Set appropriate headers for download
+    res.setHeader('Content-Type', file.mimetype || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+    res.setHeader('Content-Length', file.size || s3Response.ContentLength);
+    
+    // Stream the file content
+    s3Response.Body.pipe(res);
   } catch (error) {
     console.error('Download error:', error);
     res.status(500).json({ message: 'Server error' });

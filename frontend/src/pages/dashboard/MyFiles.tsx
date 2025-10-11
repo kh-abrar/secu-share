@@ -117,9 +117,33 @@ export default function MyFiles() {
     }
   };
 
-  const handleDownload = () => {
-    // Implement download logic
-    toast({ title: "Download started" });
+  const handleDownload = async (file: FileItem) => {
+    if (file.type === 'folder') {
+      toast({ title: "❌ Cannot download folders", variant: "destructive" });
+      return;
+    }
+
+    try {
+      // Create download link directly to our backend endpoint
+      const link = document.createElement('a');
+      link.href = api.defaults.baseURL + `/files/download/${file._id}`;
+      link.download = file.name || 'download';
+      link.style.display = 'none';
+      
+      // Add to DOM, click, and remove
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast({ title: "✅ Download started" });
+    } catch (error: unknown) {
+      const errorMsg = (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || (error as { message?: string })?.message || "Download failed";
+      toast({ 
+        title: "❌ Download failed", 
+        description: errorMsg,
+        variant: "destructive" 
+      });
+    }
   };
 
   const handleShare = (file: FileItem) => {
@@ -207,8 +231,8 @@ export default function MyFiles() {
       if (shareFile) {
         setShareFile({ ...shareFile, shareUrl: response.data.shareUrl });
       }
-    } catch (error: any) {
-      const errorMsg = error?.response?.data?.message || error?.message || "Failed to create share link";
+    } catch (error: unknown) {
+      const errorMsg = (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || (error as { message?: string })?.message || "Failed to create share link";
       toast({ 
         title: "❌ Failed to create share link", 
         description: errorMsg,
@@ -218,14 +242,14 @@ export default function MyFiles() {
     }
   };
 
-  const handleShareRevoke = async (_fileId: string) => {
+  const handleShareRevoke = async () => {
     try {
       // For now, just show a message since we don't have revoke functionality
       toast({ title: "Share link revoked" });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({ 
         title: "❌ Failed to revoke share link", 
-        description: error?.message || "Try again",
+        description: (error as { message?: string })?.message || "Try again",
         variant: "destructive" 
       });
     }
