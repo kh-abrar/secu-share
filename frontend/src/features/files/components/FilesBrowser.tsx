@@ -146,7 +146,7 @@ export function FilesBrowser() {
           {folders.length > 0 && (
             <div className="mb-6">
               <h2 className="text-lg font-semibold mb-3">Folders</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="space-y-2">
                 {folders.map(folder => (
                   <div
                     key={folder._id}
@@ -163,7 +163,7 @@ export function FilesBrowser() {
           {fileItems.length > 0 && (
             <div>
               <h2 className="text-lg font-semibold mb-3">Files</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="space-y-2">
                 {fileItems.map(file => (
                   <FileCard key={file._id} file={file} />
                 ))}

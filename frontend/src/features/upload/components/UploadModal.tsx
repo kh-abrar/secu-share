@@ -100,7 +100,7 @@ export default function UploadModal() {
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>Upload Files / Folders</DialogTitle></DialogHeader>
 
-        <UploadDropzone onSelect={setSelected} accept={["application/pdf","image/png","image/jpeg"]} maxFiles={2000} maxSizeMB={512} className="mt-2" />
+        <UploadDropzone onSelect={setSelected} accept={["application/pdf","image/png","image/jpeg","text/plain"]} maxFiles={2000} maxSizeMB={512} className="mt-2" />
 
         {selected.length > 0 && (
           <div className="mt-3 max-h-40 overflow-auto rounded-md border p-2">

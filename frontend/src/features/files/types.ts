@@ -16,6 +16,8 @@ export interface FileItem {
   accessLevel?: 'private' | 'shared' | 'public';
   createdAt?: string;
   updatedAt?: string;
+  url?: string; // For image previews
+  shareUrl?: string; // For share links
 }
 
 export interface FileListResponse {

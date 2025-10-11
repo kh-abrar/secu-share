@@ -78,13 +78,12 @@ export default function ShareDialog(props: ShareDialogProps) {
     }
   }, [open, initialVisibility, initialExpiry, initialEmailsCSV, initialLink])
 
-  // Simple placeholder “generate link” if none exists yet.
-  // In real app, you’d request it from backend.
+  // Generate or use existing link
   const generatedLink = useMemo(() => {
     if (link) return link
-    const slug = `${fileId.slice(0, 6)}-${Math.random().toString(36).slice(2, 8)}`
-    return `${window.location.origin}/s/${slug}`
-  }, [link, fileId])
+    // If no existing link, we'll generate one when saving
+    return ""
+  }, [link])
 
   const copyToClipboard = async () => {
     try {
@@ -104,10 +103,10 @@ export default function ShareDialog(props: ShareDialogProps) {
         emailsCSV: visibility === "specific" ? emailsCSV : undefined,
         link: generatedLink,
       })
-      toast({ title: "Sharing updated" })
       onOpenChange(false)
     } catch (e: any) {
-      toast({ title: "Could not save", description: e?.message || "Try again", variant: "destructive" })
+      // Error handling is done in parent component
+      console.error("Share save error:", e)
     }
   }
 

@@ -156,7 +156,14 @@ export default function UploadDropzone({
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
-      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
+      <input 
+        ref={fileInputRef} 
+        type="file" 
+        multiple 
+        className="hidden" 
+        onChange={onPickFiles}
+        accept={accept?.join(',')}
+      />
       <input
           ref={dirInputRef}
           type="file"

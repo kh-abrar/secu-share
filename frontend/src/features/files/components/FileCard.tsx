@@ -5,6 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { File as FileIcon, Folder as FolderIcon, Download, Trash2, Share2, Copy, X } from "lucide-react";
 import LinkExpirySelect, { type LinkExpiryValue, expiryToSeconds } from "@/features/sharing/components/LinkExpirySelect";
+import api from "@/libs/api";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 type FileDoc = {
   _id: string;
@@ -21,7 +24,6 @@ type Props = {
   file: FileDoc;
   onOpenFolder?: (path: string) => void;         // when folder is clicked
   onDeleted?: (id: string) => void;              // after delete success
-  token?: string;                                 // optional JWT for Authorization header
 };
 
 function formatBytes(n?: number) {
@@ -34,7 +36,7 @@ function formatBytes(n?: number) {
   return `${v.toFixed(1)} ${units[u]}`;
 }
 
-export default function FileCard({ file, onOpenFolder, onDeleted, token }: Props) {
+export default function FileCard({ file, onOpenFolder, onDeleted }: Props) {
   const isFolder = file.type === "folder";
   const [shareOpen, setShareOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -45,39 +47,41 @@ export default function FileCard({ file, onOpenFolder, onDeleted, token }: Props
   const [expiry, setExpiry] = useState<LinkExpiryValue>("7d");
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const createdAt = useMemo(() => (file.createdAt ? new Date(file.createdAt) : null), [file.createdAt]);
 
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : undefined;
-
   const onDownload = async () => {
-    if (isFolder) return; // not implemented here
+    if (isFolder) return;
     try {
-      const res = await fetch(`/api/files/download/${file._id}`, {
-        method: "GET",
-        headers: { ...authHeader },
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      if (json.downloadUrl) {
-        window.location.href = json.downloadUrl;
+      const response = await api.get(`/files/download/${file._id}`);
+      if (response.data.downloadUrl) {
+        window.location.href = response.data.downloadUrl;
+        toast({ title: "✅ Download started" });
       }
     } catch (e: any) {
-      alert(e?.message || "Download failed");
+      toast({ 
+        title: "❌ Download failed",
+        description: e?.response?.data?.message || e?.message || "Download failed",
+        variant: "destructive" 
+      });
     }
   };
 
   const onDelete = async () => {
     if (!confirm(`Delete "${file.name}"?`)) return;
     try {
-      const res = await fetch(`/api/files/${file._id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json", ...authHeader },
-      });
-      if (!res.ok) throw new Error(await res.text());
+      await api.delete(`/files/${file._id}`);
       onDeleted?.(file._id);
+      queryClient.invalidateQueries({ queryKey: ['files'] });
+      toast({ title: "✅ File deleted successfully" });
     } catch (e: any) {
-      alert(e?.message || "Delete failed");
+      toast({ 
+        title: "❌ Delete failed",
+        description: e?.response?.data?.message || e?.message || "Delete failed",
+        variant: "destructive" 
+      });
     }
   };
 
@@ -95,13 +99,11 @@ export default function FileCard({ file, onOpenFolder, onDeleted, token }: Props
     setShareUrl(null);
     try {
       if (isFolder) {
-        // For simplicity we only share files here. You can extend this by creating a "folder link"
-        // that points to the folder's File doc (type: "folder") and returns a listing in the backend.
-        throw new Error("Folder links not implemented in this card. Select a file.");
+        throw new Error("Folder links not implemented. Select a file.");
       }
 
       const hasPassword = password.trim().length > 0;
-      const url = hasPassword ? "/api/share/protected" : "/api/share/create";
+      const endpoint = hasPassword ? "/share/protected" : "/share/create";
       const body: any = {
         fileId: file._id,
         scope,
@@ -111,16 +113,21 @@ export default function FileCard({ file, onOpenFolder, onDeleted, token }: Props
       if (scope === "restricted") body.emails = emails;
       if (hasPassword) body.password = password;
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader },
-        body: JSON.stringify(body),
+      const response = await api.post(endpoint, body);
+      setShareUrl(response.data.shareUrl || response.data.url || null);
+      
+      toast({ 
+        title: "✅ Share link created",
+        description: "Link copied to the input below"
       });
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      setShareUrl(json.shareUrl || null);
     } catch (e: any) {
-      setError(e?.message || "Failed to create link");
+      const errorMsg = e?.response?.data?.message || e?.message || "Failed to create link";
+      setError(errorMsg);
+      toast({ 
+        title: "❌ Share link failed",
+        description: errorMsg,
+        variant: "destructive" 
+      });
     } finally {
       setCreating(false);
     }
@@ -130,19 +137,25 @@ export default function FileCard({ file, onOpenFolder, onDeleted, token }: Props
     if (!shareUrl) return;
     try {
       await navigator.clipboard.writeText(shareUrl);
-      // optional toast
-    } catch {}
+      toast({ title: "✅ Link copied to clipboard" });
+    } catch {
+      toast({ title: "❌ Copy failed", variant: "destructive" });
+    }
   };
 
   return (
-    <div className="flex items-center justify-between rounded-2xl border p-3">
-      <div className="flex items-center gap-3 min-w-0">
+    <div className="flex items-center justify-between rounded-lg border border-neutral-200 p-3 hover:border-neutral-300 transition-colors">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
         <div className="shrink-0">
-          {isFolder ? <FolderIcon className="h-6 w-6" /> : <FileIcon className="h-6 w-6" />}
+          {isFolder ? (
+            <FolderIcon className="h-6 w-6 text-blue-500" />
+          ) : (
+            <FileIcon className="h-6 w-6 text-neutral-500" />
+          )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div
-            className={`truncate font-medium ${isFolder ? "cursor-pointer hover:underline" : ""}`}
+            className={`truncate font-medium text-sm ${isFolder ? "cursor-pointer hover:underline hover:text-blue-600" : ""}`}
             onClick={() => isFolder && onOpenFolder?.(`${file.path}${file.name}/`)}
             title={isFolder ? `${file.path}${file.name}/` : file.name}
           >
@@ -150,15 +163,15 @@ export default function FileCard({ file, onOpenFolder, onDeleted, token }: Props
           </div>
           <div className="text-xs text-neutral-500">
             {isFolder ? "Folder" : `${file.mimetype || "file"} • ${formatBytes(file.size)}`}
-            {createdAt ? ` • ${createdAt.toLocaleString()}` : null}
+            {createdAt ? ` • ${createdAt.toLocaleDateString()}` : null}
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 shrink-0 ml-3">
         {!isFolder && (
-          <Button size="sm" variant="outline" onClick={onDownload}>
-            <Download className="h-4 w-4 mr-1" />
+          <Button size="sm" variant="outline" onClick={onDownload} className="h-7 px-2 text-xs">
+            <Download className="h-3 w-3 mr-1" />
             Download
           </Button>
         )}
@@ -166,8 +179,8 @@ export default function FileCard({ file, onOpenFolder, onDeleted, token }: Props
         {!isFolder && (
           <Dialog open={shareOpen} onOpenChange={setShareOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" className="bg-accent text-white hover:opacity-90">
-                <Share2 className="h-4 w-4 mr-1" />
+              <Button size="sm" className="bg-accent text-white hover:opacity-90 h-7 px-2 text-xs">
+                <Share2 className="h-3 w-3 mr-1" />
                 Share
               </Button>
             </DialogTrigger>
@@ -275,8 +288,8 @@ export default function FileCard({ file, onOpenFolder, onDeleted, token }: Props
           </Dialog>
         )}
 
-        <Button size="sm" variant="outline" onClick={onDelete}>
-          <Trash2 className="h-4 w-4 mr-1" />
+        <Button size="sm" variant="outline" onClick={onDelete} className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">
+          <Trash2 className="h-3 w-3 mr-1" />
           Delete
         </Button>
       </div>

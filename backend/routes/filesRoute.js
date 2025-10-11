@@ -17,10 +17,18 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE || '100000000') },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    return extname && mimetype ? cb(null, true) : cb(new Error('Invalid file type'));
+    const allowedExtensions = /\.(jpeg|jpg|png|gif|pdf|doc|docx|txt)$/i;
+    const allowedMimeTypes = /^(image\/|application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|text\/plain)/;
+    
+    const hasValidExtension = allowedExtensions.test(file.originalname);
+    const hasValidMimeType = allowedMimeTypes.test(file.mimetype);
+    
+    if (hasValidExtension && hasValidMimeType) {
+      return cb(null, true);
+    } else {
+      console.log(`File rejected: ${file.originalname}, mimetype: ${file.mimetype}`);
+      return cb(new Error('Invalid file type'));
+    }
   },
 });
 
@@ -73,5 +81,7 @@ router.get('/shared-with-me', authMiddleware, fileController.getSharedWithMe);
 // New endpoints
 router.get('/list', authMiddleware, fileController.listByPath);
 router.post('/folder', authMiddleware, fileController.createFolder);
+router.get('/storage', authMiddleware, fileController.getStorageUsage);
+router.get('/preview/:id', authMiddleware, fileController.getImagePreview);
 
 module.exports = router;

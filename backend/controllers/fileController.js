@@ -184,6 +184,21 @@ exports.uploadMany = async (req, res) => {
       let allowedEmails = [];
       if (shareType === 'private' && emailsRaw) {
         try { allowedEmails = JSON.parse(emailsRaw) || []; } catch {}
+        
+        // Also share files directly with users for "Shared With Me" functionality
+        if (allowedEmails.length > 0) {
+          const targetUsers = await User.find({ 
+            email: { $in: allowedEmails.map(e => e.toLowerCase()) } 
+          });
+          const targetUserIds = targetUsers.map(u => u._id);
+          
+          // Add users to sharedWith array for each uploaded file
+          for (const result of results) {
+            await File.findByIdAndUpdate(result.id, {
+              $addToSet: { sharedWith: { $each: targetUserIds } }
+            });
+          }
+        }
       }
       const token = crypto.randomBytes(32).toString('hex');
       link = await ShareLink.create({
@@ -333,21 +348,27 @@ exports.getSharedWithMe = async (req, res) => {
       .populate('owner', 'name email')
       .sort({ createdAt: -1 });
 
+    // Return in same format as other file endpoints for consistency
     const result = files.map(file => ({
-      id: file._id,
+      _id: file._id,
+      type: file.type,
+      name: file.name,
+      path: file.path,
+      owner: file.owner?._id || file.owner,
+      ownerEmail: file.owner?.email,
+      ownerName: file.owner?.name,
+      filename: file.filename,
       originalName: file.originalName,
       mimetype: file.mimetype,
       size: file.size,
-      createdAt: file.createdAt,
+      isPublic: file.isPublic,
+      sharedWith: file.sharedWith,
       encryptionType: file.encryptionType,
       iv: file.iv,
       encryptedKey: file.encryptedKey,
-      aiSummary: file.aiSummary || null,
-      owner: {
-        id: file.owner._id,
-        name: file.owner.name,
-        email: file.owner.email,
-      }
+      accessLevel: file.accessLevel,
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
     }));
 
     res.json(result);
@@ -378,7 +399,18 @@ exports.listByPath = async (req, res) => {
     if (!p.startsWith('/')) p = '/' + p;
     if (!p.endsWith('/')) p = p + '/';
     const items = await File.find({ owner: req.userId, path: p }).sort({ type: 1, name: 1 });
-    res.json({ items });
+    
+    // Add URL for image files
+    const itemsWithUrls = items.map(item => {
+      const itemObj = item.toObject();
+      if (item.type === 'file' && item.mimetype && item.mimetype.startsWith('image/')) {
+        // Use the preview endpoint for image thumbnails
+        itemObj.url = `/api/files/preview/${item._id}`;
+      }
+      return itemObj;
+    });
+    
+    res.json({ items: itemsWithUrls });
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -396,6 +428,56 @@ exports.createFolder = async (req, res) => {
     res.status(201).json(doc);
   } catch (e) {
     if (e.code === 11000) return res.status(409).json({ message: 'Folder already exists' });
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get image preview
+exports.getImagePreview = async (req, res) => {
+  try {
+    const file = await File.findById(req.params.id);
+    if (!file || file.owner.toString() !== req.userId.toString()) {
+      return res.status(403).json({ message: 'File not found or access denied' });
+    }
+
+    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ message: 'File is not an image' });
+    }
+
+    // Use the existing download function which already works
+    const { getSignedUrl } = require('../config/s3');
+    const downloadUrl = await getSignedUrl(file.filename, 3600); // 1 hour expiry
+
+    // Redirect to the signed URL
+    res.redirect(downloadUrl);
+  } catch (error) {
+    console.error('Image preview error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get user storage usage
+exports.getStorageUsage = async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    // Calculate total file size for user
+    const files = await File.find({ owner: userId, type: 'file' });
+    const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0);
+    
+    // You can set different storage limits based on user plan
+    // For now, using a default 15GB limit
+    const storageLimit = 15 * 1024 * 1024 * 1024; // 15 GB
+    
+    res.json({
+      used: totalSize,
+      total: storageLimit,
+      usedGB: (totalSize / (1024 * 1024 * 1024)).toFixed(2),
+      totalGB: (storageLimit / (1024 * 1024 * 1024)).toFixed(2),
+      percentage: ((totalSize / storageLimit) * 100).toFixed(1)
+    });
+  } catch (error) {
+    console.error('Storage usage error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

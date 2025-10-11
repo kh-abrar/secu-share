@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useFileStore } from './useFiles';
+import api from '@/libs/api';
 
 /**
  * React Query hook to fetch files by path
@@ -165,5 +166,20 @@ export function useDownloadFile() {
     mutationFn: ({ fileId, filename }: { fileId: string; filename: string }) => {
       return downloadFile(fileId, filename);
     },
+  });
+}
+
+/**
+ * React Query hook for fetching storage usage
+ */
+export function useStorageUsage() {
+  return useQuery({
+    queryKey: ['storage-usage'],
+    queryFn: async () => {
+      const response = await api.get('/files/storage');
+      return response.data;
+    },
+    staleTime: 60000, // Cache for 1 minute
+    refetchOnWindowFocus: false,
   });
 }
