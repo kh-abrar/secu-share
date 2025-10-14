@@ -84,4 +84,7 @@ router.post('/folder', authMiddleware, fileController.createFolder);
 router.get('/storage', authMiddleware, fileController.getStorageUsage);
 router.get('/preview/:id', authMiddleware, fileController.getImagePreview);
 
+// Move file/folder
+router.put('/move', authMiddleware, fileController.moveFileOrFolder);
+
 module.exports = router;

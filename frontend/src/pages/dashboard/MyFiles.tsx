@@ -6,6 +6,7 @@ import { FileList } from "@/features/files/components/FileList";
 import { StorageBar } from "@/features/files/components/StorageBar";
 import { Breadcrumbs } from "@/components/common/Breadcrumbs";
 import ShareDialog from "@/features/sharing/components/ShareDialog";
+import MoveModal from "@/features/files/components/MoveModal";
 import { useFilesByPath, useCreateFolder, useDeleteFile, useStorageUsage } from "@/features/files/hooks/useFilesByPath";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/libs/api";
@@ -24,12 +25,18 @@ export default function MyFiles() {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [moveFile, setMoveFile] = useState<FileItem | null>(null);
   
   const { toast } = useToast();
   const { data: files, isLoading, error } = useFilesByPath(currentPath);
   const { data: storageData, isLoading: storageLoading } = useStorageUsage();
   const createFolderMutation = useCreateFolder();
   const deleteFileMutation = useDeleteFile();
+
+  // Get all folders for move modal
+  const { data: allFiles } = useFilesByPath('/');
+  const allFolders = allFiles?.filter(file => file.type === 'folder') || [];
 
   // Filter and sort files
   const filteredAndSortedFiles = useMemo(() => {
@@ -149,6 +156,11 @@ export default function MyFiles() {
   const handleShare = (file: FileItem) => {
     setShareFile(file);
     setShareDialogOpen(true);
+  };
+
+  const handleMove = (file: FileItem) => {
+    setMoveFile(file);
+    setMoveDialogOpen(true);
   };
 
   const handleDelete = async (file: FileItem) => {
@@ -343,6 +355,7 @@ export default function MyFiles() {
             onShare={handleShare}
             onDelete={handleDelete}
             onRename={handleRename}
+            onMove={handleMove}
           />
         ) : (
           <FileList
@@ -355,6 +368,7 @@ export default function MyFiles() {
             onShare={handleShare}
             onDelete={handleDelete}
             onRename={handleRename}
+            onMove={handleMove}
           />
         )}
       </div>
@@ -374,6 +388,20 @@ export default function MyFiles() {
           initialLink={shareFile.shareUrl}
           onSave={handleShareSave}
           onRevoke={handleShareRevoke}
+        />
+      )}
+
+      {/* Move Dialog */}
+      {moveFile && (
+        <MoveModal
+          open={moveDialogOpen}
+          onOpenChange={setMoveDialogOpen}
+          item={moveFile}
+          folders={allFolders}
+          refreshFiles={() => {
+            // Refresh current path files
+            window.location.reload(); // Simple refresh for now
+          }}
         />
       )}
     </div>

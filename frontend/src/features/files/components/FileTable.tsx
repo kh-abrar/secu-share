@@ -7,15 +7,19 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { MoreVertical, Share2, Download, Trash2, Copy } from "lucide-react"
+import { MoreVertical, Share2, Download, Trash2, Copy, Move, Folder } from "lucide-react"
 import ShareDialog from "@/features/sharing/components/ShareDialog"
+import MoveModal from "@/features/files/components/MoveModal"
 import { useFilesByPath, useDeleteFile, useDownloadFile } from "@/features/files/hooks/useFilesByPath"
+import { formatFileSize } from "@/libs/utils"
 import type { FileItem } from "@/features/files/types"
 import { useToast } from "@/hooks/use-toast"
 
 export default function FileTable() {
   const [shareOpen, setShareOpen] = useState(false)
   const [activeFile, setActiveFile] = useState<FileItem | null>(null)
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [moveFile, setMoveFile] = useState<FileItem | null>(null)
   const { data: files, isLoading, error } = useFilesByPath('/')
   const deleteMutation = useDeleteFile()
   const downloadMutation = useDownloadFile()
@@ -24,6 +28,16 @@ export default function FileTable() {
   const openShare = (file: FileItem) => {
     setActiveFile(file)
     setShareOpen(true)
+  }
+
+  const openMove = (file: FileItem) => {
+    setMoveFile(file)
+    setMoveOpen(true)
+  }
+
+  const handleFolderClick = (folder: FileItem) => {
+    // Navigate to folder - for now just show a message
+    toast({ title: "Folder navigation", description: `Opening folder: ${folder.name}` })
   }
 
   const copyLink = async (file: FileItem) => {
@@ -54,12 +68,6 @@ export default function FileTable() {
     }
   }
 
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return 'N/A'
-    const mb = bytes / (1024 * 1024)
-    if (mb >= 1) return `${mb.toFixed(2)} MB`
-    return `${(bytes / 1024).toFixed(2)} KB`
-  }
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A'
@@ -107,11 +115,29 @@ export default function FileTable() {
             </tr>
           </thead>
           <tbody>
-            {files.filter(f => f.type === 'file').map((file) => (
+            {files.map((file) => (
               <tr key={file._id} className="border-t">
-                <td className="px-4 py-2">{file.name}</td>
-                <td className="px-4 py-2">{formatSize(file.size)}</td>
-                <td className="px-4 py-2">{formatDate(file.createdAt)}</td>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    {file.type === 'folder' ? (
+                      <Folder className="h-4 w-4 text-yellow-600" />
+                    ) : (
+                      <div className="h-4 w-4 bg-neutral-200 rounded" />
+                    )}
+                    <button
+                      className={`text-left ${file.type === 'folder' ? 'font-bold text-blue-600 hover:text-blue-700 hover:underline' : 'text-neutral-900'}`}
+                      onClick={() => file.type === 'folder' && handleFolderClick(file)}
+                    >
+                      {file.name}
+                    </button>
+                  </div>
+                </td>
+                <td className="px-4 py-2">
+                  {file.type === 'file' ? formatFileSize(file.size) : '-'}
+                </td>
+                <td className="px-4 py-2">
+                  {file.type === 'folder' ? `Created: ${formatDate(file.createdAt)}` : formatDate(file.createdAt)}
+                </td>
                 <td className="px-4 py-2 text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -125,18 +151,26 @@ export default function FileTable() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-40">
-                      <DropdownMenuItem onClick={() => openShare(file)}>
-                        <Share2 className="mr-2 h-4 w-4" />
-                        Share
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => copyLink(file)}>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy link
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => downloadFile(file)}>
-                        <Download className="mr-2 h-4 w-4" />
-                        Download
+                      {file.type === 'file' && (
+                        <>
+                          <DropdownMenuItem onClick={() => openShare(file)}>
+                            <Share2 className="mr-2 h-4 w-4" />
+                            Share
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => copyLink(file)}>
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy link
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => downloadFile(file)}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Download
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      <DropdownMenuItem onClick={() => openMove(file)}>
+                        <Move className="mr-2 h-4 w-4" />
+                        Move
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => deleteFile(file)}
@@ -168,6 +202,20 @@ export default function FileTable() {
           onRevoke={async (fileId) => {
             console.log("revoke link", fileId)
             toast({ title: "Link revoked" })
+          }}
+        />
+      )}
+
+      {/* Move dialog */}
+      {moveFile && (
+        <MoveModal
+          open={moveOpen}
+          onOpenChange={setMoveOpen}
+          item={moveFile}
+          folders={files?.filter(f => f.type === 'folder') || []}
+          refreshFiles={() => {
+            // Refresh the file list
+            window.location.reload();
           }}
         />
       )}

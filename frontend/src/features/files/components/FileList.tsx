@@ -1,9 +1,10 @@
-import { File as FileIcon, Download, Share2, Trash2, MoreVertical, Users } from 'lucide-react';
+import { File as FileIcon, Download, Share2, Trash2, MoreVertical, Users, Edit3, Move } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { ImageThumbnail } from './ImageThumbnail';
+import { formatFileSize } from '@/libs/utils';
 import type { FileItem } from '@/features/files/types';
 
 interface FileListProps {
@@ -16,6 +17,7 @@ interface FileListProps {
   onShare: (file: FileItem) => void;
   onDelete: (file: FileItem) => void;
   onRename: (file: FileItem) => void;
+  onMove: (file: FileItem) => void;
 }
 
 export function FileList({
@@ -27,24 +29,13 @@ export function FileList({
   onDownload,
   onShare,
   onDelete,
-  onRename
+  onRename,
+  onMove
 }: FileListProps) {
   const allSelected = files.length > 0 && files.every(file => selectedFiles.includes(file._id));
   const someSelected = selectedFiles.length > 0;
 
 
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return '-';
-    if (bytes < 1024) return `${bytes} B`;
-    const units = ['KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
-  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-';
@@ -104,10 +95,10 @@ export function FileList({
               </div>
               <div className="min-w-0 flex-1">
                 <button
-                  className={`text-left font-medium truncate ${
+                  className={`text-left truncate ${
                     file.type === 'folder' 
-                      ? 'text-blue-600 hover:text-blue-700 hover:underline' 
-                      : 'text-neutral-900'
+                      ? 'font-bold text-blue-600 hover:text-blue-700 hover:underline' 
+                      : 'font-medium text-neutral-900'
                   }`}
                   onClick={() => file.type === 'folder' && onFolderClick(file)}
                   title={file.name}
@@ -122,12 +113,12 @@ export function FileList({
 
             {/* Size */}
             <div className="col-span-2 flex items-center text-sm text-neutral-600">
-              {file.type === 'file' ? formatSize(file.size) : '-'}
+              {file.type === 'file' ? formatFileSize(file.size) : '-'}
             </div>
 
             {/* Uploaded date */}
             <div className="col-span-2 flex items-center text-sm text-neutral-600">
-              {formatDate(file.createdAt)}
+              {file.type === 'folder' ? `Created: ${formatDate(file.createdAt)}` : formatDate(file.createdAt)}
             </div>
 
             {/* Shared status */}
@@ -164,7 +155,12 @@ export function FileList({
                     </>
                   )}
                   <DropdownMenuItem onClick={() => onRename(file)}>
+                    <Edit3 className="h-4 w-4 mr-2" />
                     Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onMove(file)}>
+                    <Move className="h-4 w-4 mr-2" />
+                    Move
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={() => onDelete(file)}

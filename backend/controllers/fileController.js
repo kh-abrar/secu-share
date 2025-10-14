@@ -125,6 +125,9 @@ exports.uploadMany = async (req, res) => {
       const key = s3KeyFor(userId, dir, base);
       await uploadFileToS3(f.buffer, key, f.mimetype || 'application/octet-stream');
 
+      // Debug: Log file size information
+      console.log(`File upload: ${f.originalname}, size: ${f.size} bytes (${(f.size / 1024).toFixed(2)} KB)`);
+
       const fileDoc = await File.create({
         type: 'file',
         name: base,
@@ -447,6 +450,13 @@ exports.listByPath = async (req, res) => {
     if (!p.endsWith('/')) p = p + '/';
     const items = await File.find({ owner: req.userId, path: p }).sort({ type: 1, name: 1 });
     
+    // Debug: Log file sizes being returned
+    items.forEach(item => {
+      if (item.type === 'file') {
+        console.log(`File: ${item.name}, size: ${item.size} bytes (${(item.size / 1024).toFixed(2)} KB)`);
+      }
+    });
+    
     // Add URL for image files
     const itemsWithUrls = items.map(item => {
       const itemObj = item.toObject();
@@ -526,5 +536,80 @@ exports.getStorageUsage = async (req, res) => {
   } catch (error) {
     console.error('Storage usage error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Move file or folder
+exports.moveFileOrFolder = async (req, res) => {
+  try {
+    const { itemId, targetFolderId } = req.body;
+    const userId = req.userId;
+
+    const item = await File.findOne({ _id: itemId, owner: userId });
+    if (!item) return res.status(404).json({ success: false, message: 'Item not found' });
+
+    // Handle root move
+    let newPath = '/';
+    if (targetFolderId) {
+      const target = await File.findOne({ _id: targetFolderId, owner: userId, type: 'folder' });
+      if (!target)
+        return res.status(400).json({ success: false, message: 'Invalid target folder' });
+
+      // Prevent circular move
+      const oldFullPath = item.path + item.name + '/';
+      const newFullPath = target.path + target.name + '/';
+      if (item.type === 'folder' && newFullPath.startsWith(oldFullPath)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot move a folder inside itself or its subfolder',
+        });
+      }
+
+      newPath = newFullPath;
+    }
+
+    // Check for name conflict
+    const conflict = await File.findOne({
+      owner: userId,
+      path: newPath,
+      name: item.name,
+    });
+    if (conflict)
+      return res
+        .status(400)
+        .json({ success: false, message: 'An item with the same name already exists there' });
+
+    // Move the item
+    const oldPath = item.path;
+    item.path = newPath;
+    await item.save();
+
+    // If folder, update all children paths
+    if (item.type === 'folder') {
+      const oldFullPath = oldPath + item.name + '/';
+      const newFullPath = newPath + item.name + '/';
+
+      await File.updateMany(
+        { owner: userId, path: { $regex: `^${oldFullPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}` } },
+        [
+          {
+            $set: {
+              path: {
+                $concat: [newFullPath, { $substr: ['$path', oldFullPath.length, -1] }],
+              },
+            },
+          },
+        ]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'Item moved successfully',
+      movedItem: item,
+    });
+  } catch (err) {
+    console.error('Move error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { FileIcon } from 'lucide-react';
+import { FileIcon, Folder } from 'lucide-react';
 
 interface ImageThumbnailProps {
   file: {
     _id: string;
     name: string;
+    type?: string;
     mimetype?: string;
     url?: string;
   };
@@ -31,7 +32,7 @@ export function ImageThumbnail({ file, fileObject, className = '', size = 'md' }
   };
 
   useEffect(() => {
-    if (!file.mimetype?.startsWith('image/')) {
+    if (file.type === 'folder' || !file.mimetype?.startsWith('image/')) {
       setIsLoading(false);
       return;
     }
@@ -74,6 +75,14 @@ export function ImageThumbnail({ file, fileObject, className = '', size = 'md' }
     setIsLoading(false);
     setHasError(true);
   };
+
+  if (file.type === 'folder') {
+    return (
+      <div className={`${sizeClasses[size]} bg-yellow-50 rounded-md border border-yellow-200 flex items-center justify-center ${className}`}>
+        <Folder className={`${iconSizeClasses[size]} text-yellow-600`} />
+      </div>
+    );
+  }
 
   if (!file.mimetype?.startsWith('image/')) {
     return (

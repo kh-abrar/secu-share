@@ -1,9 +1,10 @@
-import { File as FileIcon, Download, Share2, Trash2, MoreVertical, Users } from 'lucide-react';
+import { File as FileIcon, Download, Share2, Trash2, MoreVertical, Users, Edit3, Move } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { ImageThumbnail } from './ImageThumbnail';
+import { formatFileSize } from '@/libs/utils';
 import type { FileItem } from '@/features/files/types';
 
 interface FileGridProps {
@@ -16,6 +17,7 @@ interface FileGridProps {
   onShare: (file: FileItem) => void;
   onDelete: (file: FileItem) => void;
   onRename: (file: FileItem) => void;
+  onMove: (file: FileItem) => void;
 }
 
 export function FileGrid({
@@ -27,24 +29,13 @@ export function FileGrid({
   onDownload,
   onShare,
   onDelete,
-  onRename
+  onRename,
+  onMove
 }: FileGridProps) {
   const allSelected = files.length > 0 && files.every(file => selectedFiles.includes(file._id));
   const someSelected = selectedFiles.length > 0;
 
 
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    const units = ['KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
-  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
@@ -102,7 +93,7 @@ export function FileGrid({
 
               {/* File name */}
               <div className="w-full">
-                <p className="text-xs font-medium text-neutral-900 truncate mb-1" title={file.name}>
+                <p className={`text-xs truncate mb-1 ${file.type === 'folder' ? 'font-bold text-neutral-900' : 'font-medium text-neutral-900'}`} title={file.name}>
                   {file.name}
                 </p>
                 
@@ -110,9 +101,12 @@ export function FileGrid({
                 <div className="text-xs text-neutral-500 space-y-1">
                   {file.type === 'file' && (
                     <>
-                      <p>{formatSize(file.size)}</p>
+                      <p>{formatFileSize(file.size)}</p>
                       <p>{formatDate(file.createdAt)}</p>
                     </>
+                  )}
+                  {file.type === 'folder' && (
+                    <p>Created: {formatDate(file.createdAt)}</p>
                   )}
                 </div>
 
@@ -150,7 +144,12 @@ export function FileGrid({
                     </>
                   )}
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRename(file); }}>
+                    <Edit3 className="h-4 w-4 mr-2" />
                     Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMove(file); }}>
+                    <Move className="h-4 w-4 mr-2" />
+                    Move
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={(e) => { e.stopPropagation(); onDelete(file); }}
