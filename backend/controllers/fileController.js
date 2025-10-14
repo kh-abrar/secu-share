@@ -275,20 +275,60 @@ exports.downloadFile = async (req, res) => {
   }
 };
 
+// Helper function to recursively delete folder contents
+async function deleteFolderRecursively(ownerId, folderPath) {
+  // Find all files and folders within this folder
+  const items = await File.find({ 
+    owner: ownerId, 
+    path: { $regex: `^${folderPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}` }
+  });
+
+  for (const item of items) {
+    if (item.type === 'file') {
+      // Delete file from S3
+      try {
+        await deleteFileFromS3(item.filename);
+      } catch (s3Err) {
+        console.error(`S3 deletion failed for file ${item.filename}:`, s3Err.message);
+        // Continue with database deletion even if S3 deletion fails
+      }
+    } else if (item.type === 'folder') {
+      // Recursively delete subfolder contents
+      const subfolderPath = `${item.path}${item.name}/`;
+      await deleteFolderRecursively(ownerId, subfolderPath);
+    }
+    
+    // Delete the item from database
+    await File.findByIdAndDelete(item._id);
+  }
+}
+
 exports.deleteFile = async (req, res) => {
   try {
     const file = await File.findOne({ _id: req.params.id, owner: req.userId });
     if (!file) return res.status(404).json({ message: 'File not found' });
 
-    try {
-      await deleteFileFromS3(file.filename);
-    } catch (s3Err) {
-      console.error('S3 deletion failed:', s3Err.message);
-      return res.status(500).json({ message: 'S3 deletion failed' });
-    }
+    if (file.type === 'folder') {
+      // For folders, recursively delete all contents
+      const folderPath = `${file.path}${file.name}/`;
+      await deleteFolderRecursively(req.userId, folderPath);
+      
+      // Delete the folder itself
+      await File.findByIdAndDelete(req.params.id);
+      
+      res.json({ message: 'Folder and all contents deleted successfully' });
+    } else {
+      // For files, delete from S3 and database
+      try {
+        await deleteFileFromS3(file.filename);
+      } catch (s3Err) {
+        console.error('S3 deletion failed:', s3Err.message);
+        return res.status(500).json({ message: 'S3 deletion failed' });
+      }
 
-    await File.findByIdAndDelete(req.params.id);
-    res.json({ message: 'File deleted successfully' });
+      await File.findByIdAndDelete(req.params.id);
+      res.json({ message: 'File deleted successfully' });
+    }
   } catch (error) {
     console.error('Delete error:', error);
     res.status(500).json({ message: 'Server error' });

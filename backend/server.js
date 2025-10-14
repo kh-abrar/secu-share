@@ -27,7 +27,28 @@ app.use(cookieParser());
 // CORS
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 app.use(cors({
-  origin: [FRONTEND_URL],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Allow all localhost ports for development
+    if (origin.match(/^http:\/\/localhost:\d+$/)) {
+      return callback(null, true);
+    }
+    
+    // Allow the configured frontend URL
+    if (origin === FRONTEND_URL) {
+      return callback(null, true);
+    }
+    
+    // In production, you might want to be more restrictive
+    if (process.env.NODE_ENV === 'production') {
+      return callback(new Error('Not allowed by CORS'), false);
+    }
+    
+    // For development, allow any localhost
+    callback(null, true);
+  },
   credentials: true,
 }));
 

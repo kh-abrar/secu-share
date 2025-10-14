@@ -152,15 +152,22 @@ export default function MyFiles() {
   };
 
   const handleDelete = async (file: FileItem) => {
-    if (!confirm(`Delete "${file.name}"?`)) return;
+    const isFolder = file.type === 'folder';
+    const confirmMessage = isFolder 
+      ? `Delete folder "${file.name}" and all its contents? This action cannot be undone.`
+      : `Delete "${file.name}"?`;
+    
+    if (!confirm(confirmMessage)) return;
     
     try {
       await deleteFileMutation.mutateAsync(file._id);
       setSelectedFiles(prev => prev.filter(id => id !== file._id));
-      toast({ title: "✅ File deleted successfully" });
+      toast({ 
+        title: isFolder ? "✅ Folder and all contents deleted successfully" : "✅ File deleted successfully" 
+      });
     } catch (error: unknown) {
       toast({ 
-        title: "❌ Failed to delete file",
+        title: isFolder ? "❌ Failed to delete folder" : "❌ Failed to delete file",
         description: (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || (error as { message?: string })?.message,
         variant: "destructive"
       });
@@ -173,17 +180,30 @@ export default function MyFiles() {
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selectedFiles.length} selected files?`)) return;
+    const selectedItems = filteredAndSortedFiles.filter(f => selectedFiles.includes(f._id));
+    const folderCount = selectedItems.filter(f => f.type === 'folder').length;
+    
+    let confirmMessage = `Delete ${selectedFiles.length} selected items?`;
+    if (folderCount > 0) {
+      confirmMessage += `\n\nThis includes ${folderCount} folder(s) and all their contents. This action cannot be undone.`;
+    }
+    
+    if (!confirm(confirmMessage)) return;
     
     try {
       for (const fileId of selectedFiles) {
         await deleteFileMutation.mutateAsync(fileId);
       }
       setSelectedFiles([]);
-      toast({ title: `✅ ${selectedFiles.length} files deleted successfully` });
+      
+      const successMessage = folderCount > 0 
+        ? `✅ ${selectedFiles.length} items deleted successfully (including ${folderCount} folder(s) and all contents)`
+        : `✅ ${selectedFiles.length} files deleted successfully`;
+      
+      toast({ title: successMessage });
     } catch (error: unknown) {
       toast({ 
-        title: "❌ Failed to delete files",
+        title: "❌ Failed to delete items",
         description: (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || (error as { message?: string })?.message,
         variant: "destructive"
       });
