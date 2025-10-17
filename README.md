@@ -1,6 +1,6 @@
-# 🔐 SecureShare – AI-Powered File Sharing Platform
+# 🔐 SecureShare – File Sharing Platform
 
-SecureShare is a privacy-first, end-to-end encrypted file-sharing web application. It allows users to securely upload, share, and download files with fine-grained access control. The platform supports public and user-specific sharing, expiration links, and offers bonus AI capabilities such as document summarization.
+SecureShare is a privacy-first, end-to-end encrypted file-sharing web application. It allows users to securely upload, share, and download files with fine-grained access control. The platform supports public and user-specific sharing, expiration links.
 
 ---
 
@@ -26,9 +26,7 @@ SecureShare is a privacy-first, end-to-end encrypted file-sharing web applicatio
   - Share files publicly or with specific registered users
   - Only authorized users can view/download private files
 
-- **AI-Powered Bonus**
-  - Upload PDF/DOC files and receive AI-generated summaries using OpenAI
-  - Example: Contract summaries, report overviews, etc.
+
 
   ## 🧰 Tech Stack
 | Layer        | Tech Used                                   |
