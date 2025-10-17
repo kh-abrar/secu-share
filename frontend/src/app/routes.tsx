@@ -5,10 +5,14 @@ import SignupPage from "@/pages/auth/SignupPage";
 import DashboardHome from "@/pages/dashboard/DashboardHome";
 import MyFiles from "@/pages/dashboard/MyFiles";
 import SharedWithMe from "@/pages/dashboard/SharedWithMe";
+import ShareAccessPage from "@/pages/share/ShareAccessPage";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },
+  // Share access route (outside of App wrapper for public access)
+  { path: "/share/:token", element: <ShareAccessPage /> },
+  { path: "/s/:token", element: <ShareAccessPage /> }, // Alternative short URL
   {
     path: "/",
     element: <App />,

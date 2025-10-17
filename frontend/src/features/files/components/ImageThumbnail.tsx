@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FileIcon, Folder } from 'lucide-react';
+import { FileIcon as LucideFileIcon, Folder } from 'lucide-react';
+import { FileIcon } from '@/components/common/FileIcon';
 
 interface ImageThumbnailProps {
   file: {
@@ -79,7 +80,7 @@ export function ImageThumbnail({ file, fileObject, className = '', size = 'md' }
   if (file.type === 'folder') {
     return (
       <div className={`${sizeClasses[size]} bg-yellow-50 rounded-md border border-yellow-200 flex items-center justify-center ${className}`}>
-        <Folder className={`${iconSizeClasses[size]} text-yellow-600`} />
+        <FileIcon type="folder" size={size} />
       </div>
     );
   }
@@ -87,7 +88,11 @@ export function ImageThumbnail({ file, fileObject, className = '', size = 'md' }
   if (!file.mimetype?.startsWith('image/')) {
     return (
       <div className={`${sizeClasses[size]} bg-neutral-100 rounded-md border flex items-center justify-center ${className}`}>
-        <FileIcon className={`${iconSizeClasses[size]} text-neutral-500`} />
+        <FileIcon 
+          mimetype={file.mimetype} 
+          filename={file.name} 
+          size={size} 
+        />
       </div>
     );
   }
@@ -95,7 +100,11 @@ export function ImageThumbnail({ file, fileObject, className = '', size = 'md' }
   if (hasError || !imageUrl) {
     return (
       <div className={`${sizeClasses[size]} bg-neutral-100 rounded-md border flex items-center justify-center ${className}`}>
-        <FileIcon className={`${iconSizeClasses[size]} text-neutral-500`} />
+        <FileIcon 
+          mimetype={file.mimetype} 
+          filename={file.name} 
+          size={size} 
+        />
       </div>
     );
   }

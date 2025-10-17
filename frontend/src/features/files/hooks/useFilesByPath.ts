@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useFileStore } from './useFiles';
 import api from '@/libs/api';
+import type { FileItem } from '../types';
 
 /**
  * React Query hook to fetch files by path
@@ -181,5 +182,42 @@ export function useStorageUsage() {
     },
     staleTime: 60000, // Cache for 1 minute
     refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * React Query hook to fetch all files recursively for dashboard stats
+ */
+export function useAllFiles() {
+  return useQuery({
+    queryKey: ['files', 'all'],
+    queryFn: async () => {
+      // Recursively fetch all files from all directories
+      const allFiles: FileItem[] = [];
+      
+      const fetchDirectoryRecursive = async (path: string) => {
+        try {
+          const response = await api.get('/files/list', {
+            params: { path },
+          });
+          const items = response.data.items || [];
+          
+          for (const item of items) {
+            allFiles.push(item);
+            // If it's a folder, recursively fetch its contents
+            if (item.type === 'folder') {
+              const folderPath = `${item.path}${item.name}/`;
+              await fetchDirectoryRecursive(folderPath);
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching directory ${path}:`, error);
+        }
+      };
+      
+      await fetchDirectoryRecursive('/');
+      return allFiles;
+    },
+    staleTime: 30000, // Consider data fresh for 30 seconds
   });
 }

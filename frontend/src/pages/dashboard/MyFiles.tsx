@@ -311,12 +311,12 @@ export default function MyFiles() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-neutral-50">
-      <div className="bg-white border-b border-neutral-200">
+    <div className="flex flex-col h-full bg-white">
+      <div className="bg-white border-b border-neutral-200 shadow-sm">
         <div className="container mx-auto px-4 py-6">
           <PageHeader
             title="My Files"
-            description="Browse and manage your files and folders"
+            description="Browse and manage all your files."
           />
           
           {/* Breadcrumbs */}

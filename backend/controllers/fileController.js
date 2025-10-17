@@ -220,7 +220,7 @@ exports.uploadMany = async (req, res) => {
       shareLink: link
         ? {
             token: link.token,
-            url: `${process.env.BASE_URL || `${req.protocol}://${req.get('host')}`}/api/share/access/${link.token}`,
+            url: `${process.env.FRONTEND_URL || process.env.BASE_URL || `${req.protocol}://${req.get('host')}`}/share/${link.token}`,
             scope: link.scope,
             expiresAt: link.expiresAt,
           }

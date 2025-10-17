@@ -7,11 +7,12 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { MoreVertical, Share2, Download, Trash2, Copy, Move, Folder } from "lucide-react"
+import { MoreVertical, Share2, Download, Trash2, Copy, Move, Edit3, FolderInput } from "lucide-react"
 import ShareDialog from "@/features/sharing/components/ShareDialog"
 import MoveModal from "@/features/files/components/MoveModal"
 import { useFilesByPath, useDeleteFile, useDownloadFile } from "@/features/files/hooks/useFilesByPath"
-import { formatFileSize } from "@/libs/utils"
+import { formatFileSize, formatDate } from "@/libs/utils"
+import { FileIcon } from "@/components/common/FileIcon"
 import type { FileItem } from "@/features/files/types"
 import { useToast } from "@/hooks/use-toast"
 
@@ -69,9 +70,9 @@ export default function FileTable() {
   }
 
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleDateString()
+  const handleRename = (file: FileItem) => {
+    // Implement rename logic
+    toast({ title: "Rename functionality coming soon" })
   }
 
   if (isLoading) {
@@ -117,26 +118,27 @@ export default function FileTable() {
           <tbody>
             {files.map((file) => (
               <tr key={file._id} className="border-t">
-                <td className="px-4 py-2">
-                  <div className="flex items-center gap-2">
-                    {file.type === 'folder' ? (
-                      <Folder className="h-4 w-4 text-yellow-600" />
-                    ) : (
-                      <div className="h-4 w-4 bg-neutral-200 rounded" />
-                    )}
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <FileIcon 
+                      type={file.type} 
+                      mimetype={file.mimetype} 
+                      filename={file.name} 
+                      size="md" 
+                    />
                     <button
-                      className={`text-left ${file.type === 'folder' ? 'font-bold text-blue-600 hover:text-blue-700 hover:underline' : 'text-neutral-900'}`}
+                      className={`text-left hover:bg-accent/20 px-2 py-1 rounded transition-colors ${file.type === 'folder' ? 'font-semibold text-neutral-900 hover:text-blue-600' : 'text-neutral-900'}`}
                       onClick={() => file.type === 'folder' && handleFolderClick(file)}
                     >
                       {file.name}
                     </button>
                   </div>
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-4 py-3 text-sm text-neutral-600">
                   {file.type === 'file' ? formatFileSize(file.size) : '-'}
                 </td>
-                <td className="px-4 py-2">
-                  {file.type === 'folder' ? `Created: ${formatDate(file.createdAt)}` : formatDate(file.createdAt)}
+                <td className="px-4 py-3 text-sm text-neutral-500">
+                  {formatDate(file.createdAt)}
                 </td>
                 <td className="px-4 py-2 text-right">
                   <DropdownMenu>
@@ -150,7 +152,7 @@ export default function FileTable() {
                         <MoreVertical className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuContent align="end" className="w-48">
                       {file.type === 'file' && (
                         <>
                           <DropdownMenuItem onClick={() => openShare(file)}>
@@ -168,10 +170,15 @@ export default function FileTable() {
                           </DropdownMenuItem>
                         </>
                       )}
+                      <DropdownMenuItem onClick={() => handleRename(file)}>
+                        <Edit3 className="mr-2 h-4 w-4" />
+                        Rename
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => openMove(file)}>
-                        <Move className="mr-2 h-4 w-4" />
+                        <FolderInput className="mr-2 h-4 w-4" />
                         Move
                       </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={() => deleteFile(file)}
                         className="text-red-600 focus:text-red-700"

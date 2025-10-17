@@ -34,6 +34,7 @@ export type ShareDialogProps = {
   initialVisibility?: ShareVisibility
   initialExpiry?: Expiry
   initialEmailsCSV?: string
+  initialPassword?: string
 
   // Callbacks to integrate with API later
   onSave?: (payload: {
@@ -41,6 +42,7 @@ export type ShareDialogProps = {
     visibility: ShareVisibility
     expiry: Expiry
     emailsCSV?: string
+    password?: string
     link: string
   }) => void | Promise<void>
   onRevoke?: (fileId: string) => void | Promise<void>
@@ -56,6 +58,7 @@ export default function ShareDialog(props: ShareDialogProps) {
     initialVisibility = "public",
     initialExpiry = "7d",
     initialEmailsCSV = "",
+    initialPassword = "",
     onSave,
     onRevoke,
   } = props
@@ -67,6 +70,8 @@ export default function ShareDialog(props: ShareDialogProps) {
   const [expiry, setExpiry] = useState<Expiry>(initialExpiry)
   const [emailsCSV, setEmailsCSV] = useState(initialEmailsCSV)
   const [link, setLink] = useState(initialLink || "")
+  const [isPasswordEnabled, setIsPasswordEnabled] = useState(!!initialPassword)
+  const [password, setPassword] = useState(initialPassword)
 
   // When opened, seed defaults (useful if opening for different files)
   useEffect(() => {
@@ -75,8 +80,10 @@ export default function ShareDialog(props: ShareDialogProps) {
       setExpiry(initialExpiry)
       setEmailsCSV(initialEmailsCSV)
       setLink(initialLink || "")
+      setIsPasswordEnabled(!!initialPassword)
+      setPassword(initialPassword)
     }
-  }, [open, initialVisibility, initialExpiry, initialEmailsCSV, initialLink])
+  }, [open, initialVisibility, initialExpiry, initialEmailsCSV, initialLink, initialPassword])
 
   // Generate or use existing link
   const generatedLink = useMemo(() => {
@@ -94,6 +101,15 @@ export default function ShareDialog(props: ShareDialogProps) {
     }
   }
 
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let newPassword = '';
+    for (let i = 0; i < 8; i++) {
+      newPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setPassword(newPassword);
+  }
+
   const handleSave = async () => {
     try {
       await onSave?.({
@@ -101,6 +117,7 @@ export default function ShareDialog(props: ShareDialogProps) {
         visibility,
         expiry,
         emailsCSV: visibility === "specific" ? emailsCSV : undefined,
+        password: isPasswordEnabled ? password : undefined,
         link: generatedLink,
       })
       onOpenChange(false)
@@ -199,6 +216,51 @@ export default function ShareDialog(props: ShareDialogProps) {
               <SelectItem value="never">Never</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Password Protection */}
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="passwordProtection"
+              checked={isPasswordEnabled}
+              onChange={(e) => setIsPasswordEnabled(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <Label htmlFor="passwordProtection" className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <Shield className="w-4 h-4" />
+              Enable Password Protection
+            </Label>
+          </div>
+          
+          {isPasswordEnabled && (
+            <div className="ml-6 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-sm text-gray-600">Set Password</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={generateRandomPassword}
+                  className="text-xs"
+                >
+                  Generate Random
+                </Button>
+              </div>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password to protect shared file"
+                className="text-sm"
+              />
+              <p className="text-xs text-gray-500">
+                Recipients will need to enter this password once to access the file.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Actions */}

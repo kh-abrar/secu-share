@@ -19,6 +19,8 @@ export default function UploadModal() {
   const [emails, setEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState("");
   const [expiry, setExpiry] = useState<"24h" | "7d" | "never">("7d");
+  const [isPasswordEnabled, setIsPasswordEnabled] = useState(false);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -32,9 +34,18 @@ export default function UploadModal() {
   };
   const handleRemoveEmail = (target: string) => setEmails((prev) => prev.filter((m) => m !== target));
 
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let password = '';
+    for (let i = 0; i < 8; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setPassword(password);
+  };
+
   const resetAll = () => {
     setSelected([]); setEmails([]); setShareType("public"); setEmailInput("");
-    setExpiry("7d"); setBusy(false); setError(null);
+    setExpiry("7d"); setIsPasswordEnabled(false); setPassword(""); setBusy(false); setError(null);
   };
 
   const handleUpload = async () => {
@@ -46,6 +57,7 @@ export default function UploadModal() {
     const displayNames = fileCount > 3 ? `${fileNames} and ${fileCount - 3} more` : fileNames;
     
     try {
+      // First, upload the files
       const form = new FormData();
       for (const f of selected) {
         form.append("files", f);
@@ -57,17 +69,35 @@ export default function UploadModal() {
       form.append("shareType", shareType);
       if (shareType === "private") form.append("emails", JSON.stringify(emails));
 
-      await api.post("/files/upload", form, {
+      const uploadResponse = await api.post("/files/upload", form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+
+      // If password protection is enabled, create password-protected share links
+      if (isPasswordEnabled && password.trim()) {
+        const uploadedFiles = uploadResponse.data.created || [];
+        
+        for (const file of uploadedFiles) {
+          const sharePayload = {
+            fileId: file._id,
+            password: password.trim(),
+            expiresIn: expiry === "24h" ? 24 * 3600 : expiry === "7d" ? 7 * 24 * 3600 : undefined,
+            scope: shareType === "private" ? "restricted" : "public",
+            emails: shareType === "private" ? emails : undefined,
+          };
+
+          await api.post("/share/protected", sharePayload);
+        }
+      }
 
       // Invalidate and refetch files to show newly uploaded files
       await queryClient.invalidateQueries({ queryKey: ['files'] });
 
       // Show success toast with animation
+      const protectionText = isPasswordEnabled && password.trim() ? " with password protection" : "";
       toast({
         title: "✅ Upload Successful!",
-        description: `${fileCount} file${fileCount > 1 ? 's' : ''} uploaded successfully: ${displayNames}`,
+        description: `${fileCount} file${fileCount > 1 ? 's' : ''} uploaded successfully${protectionText}: ${displayNames}`,
         duration: 5000,
       });
 
@@ -164,12 +194,61 @@ export default function UploadModal() {
           </div>
         )}
 
+        {/* Password Protection Section */}
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="passwordProtection"
+              checked={isPasswordEnabled}
+              onChange={(e) => setIsPasswordEnabled(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <Label htmlFor="passwordProtection" className="text-sm font-medium text-gray-700">
+              Enable Password Protection 🔒
+            </Label>
+          </div>
+          
+          {isPasswordEnabled && (
+            <div className="ml-6 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-sm text-gray-600">Set Password</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={generateRandomPassword}
+                  className="text-xs"
+                >
+                  Generate Random
+                </Button>
+              </div>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password to protect shared files"
+                className="text-sm"
+              />
+              <p className="text-xs text-gray-500">
+                Recipients will need to enter this password once to access the files.
+              </p>
+            </div>
+          )}
+        </div>
+
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
         <div className="mt-6 flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => { setOpen(false); resetAll(); }} disabled={busy}>Cancel</Button>
-          <Button className="bg-accent text-white hover:opacity-90" onClick={handleUpload} disabled={busy || selected.length === 0} type="button">
-            {busy ? "Uploading…" : "Upload"}
+          <Button 
+            className="bg-accent text-white hover:opacity-90" 
+            onClick={handleUpload} 
+            disabled={busy || selected.length === 0 || (isPasswordEnabled && !password.trim())} 
+            type="button"
+          >
+            {busy ? "Uploading…" : isPasswordEnabled ? "Upload & Protect" : "Upload"}
           </Button>
         </div>
       </DialogContent>

@@ -45,9 +45,9 @@ exports.createShareLink = async (req, res) => {
       encryptedKey: file.encryptedKey || null,
     });
 
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
     res.status(201).json({
-      shareUrl: `${baseUrl}/api/share/access/${token}`,
+      shareUrl: `${baseUrl}/share/${token}`,
       token,
       expiresAt,
       maxAccess,
@@ -101,9 +101,9 @@ exports.createProtectedShareLink = async (req, res) => {
       encryptedKey: file.encryptedKey || null,
     });
 
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
     res.status(201).json({
-      shareUrl: `${baseUrl}/api/share/access/${token}`,
+      shareUrl: `${baseUrl}/share/${token}`,
       token,
       expiresAt,
       maxAccess,

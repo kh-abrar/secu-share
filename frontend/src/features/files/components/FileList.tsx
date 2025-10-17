@@ -1,10 +1,10 @@
-import { File as FileIcon, Download, Share2, Trash2, MoreVertical, Users, Edit3, Move } from 'lucide-react';
+import { File as LucideFileIcon, Download, Share2, Trash2, MoreVertical, Users, Edit3, FolderInput } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { ImageThumbnail } from './ImageThumbnail';
-import { formatFileSize } from '@/libs/utils';
+import { formatFileSize, formatDate } from '@/libs/utils';
 import type { FileItem } from '@/features/files/types';
 
 interface FileListProps {
@@ -37,11 +37,6 @@ export function FileList({
 
 
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
-  };
 
   const isShared = (file: FileItem) => {
     return file.sharedWith && file.sharedWith.length > 0;
@@ -74,7 +69,7 @@ export function FileList({
         {files.map((file) => (
           <div
             key={file._id}
-            className={`grid grid-cols-12 gap-4 py-3 px-4 rounded-lg transition-colors ${
+            className={`grid grid-cols-12 gap-4 py-3 px-4 rounded-lg transition-smooth ${
               selectedFiles.includes(file._id)
                 ? 'bg-blue-50 border border-blue-200'
                 : 'hover:bg-neutral-50'
@@ -95,9 +90,9 @@ export function FileList({
               </div>
               <div className="min-w-0 flex-1">
                 <button
-                  className={`text-left truncate ${
+                  className={`text-left truncate hover:bg-accent/20 px-2 py-1 rounded transition-colors ${
                     file.type === 'folder' 
-                      ? 'font-bold text-blue-600 hover:text-blue-700 hover:underline' 
+                      ? 'font-semibold text-neutral-900 hover:text-blue-600' 
                       : 'font-medium text-neutral-900'
                   }`}
                   onClick={() => file.type === 'folder' && onFolderClick(file)}
@@ -117,8 +112,8 @@ export function FileList({
             </div>
 
             {/* Uploaded date */}
-            <div className="col-span-2 flex items-center text-sm text-neutral-600">
-              {file.type === 'folder' ? `Created: ${formatDate(file.createdAt)}` : formatDate(file.createdAt)}
+            <div className="col-span-2 flex items-center text-sm text-neutral-500">
+              {formatDate(file.createdAt)}
             </div>
 
             {/* Shared status */}
@@ -159,7 +154,7 @@ export function FileList({
                     Rename
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onMove(file)}>
-                    <Move className="h-4 w-4 mr-2" />
+                    <FolderInput className="h-4 w-4 mr-2" />
                     Move
                   </DropdownMenuItem>
                   <DropdownMenuItem 
@@ -179,9 +174,9 @@ export function FileList({
       {/* Empty state */}
       {files.length === 0 && (
         <div className="text-center py-12">
-          <FileIcon className="h-12 w-12 text-neutral-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-neutral-900 mb-2">No files yet</h3>
-          <p className="text-neutral-500">Upload something to get started!</p>
+          <LucideFileIcon className="h-12 w-12 text-neutral-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-neutral-900 mb-2">📁 No files yet</h3>
+          <p className="text-neutral-500">Upload files to get started.</p>
         </div>
       )}
     </div>
