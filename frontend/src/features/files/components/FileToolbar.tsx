@@ -22,9 +22,11 @@ interface FileToolbarProps {
   sort: SortType;
   onSortChange: (sort: SortType) => void;
   selectedCount: number;
+  totalCount?: number;
   onBulkDelete: () => void;
   onBulkShare: () => void;
   onCreateFolder: (name: string) => void;
+  isSharedView?: boolean;
 }
 
 export function FileToolbar({
@@ -37,9 +39,11 @@ export function FileToolbar({
   sort,
   onSortChange,
   selectedCount,
+  totalCount: _totalCount = 0,
   onBulkDelete,
   onBulkShare,
-  onCreateFolder
+  onCreateFolder,
+  isSharedView = false
 }: FileToolbarProps) {
   const [newFolderOpen, setNewFolderOpen] = React.useState(false);
   const [folderName, setFolderName] = React.useState('');
@@ -103,27 +107,33 @@ export function FileToolbar({
         {selectedCount > 0 && (
           <div className="flex items-center gap-2 mr-4">
             <span className="text-sm text-neutral-600">{selectedCount} selected</span>
-            <Button size="sm" variant="outline" onClick={onBulkShare}>
-              <Share2 className="h-4 w-4 mr-1" />
-              Share
-            </Button>
-            <Button size="sm" variant="outline" onClick={onBulkDelete} className="text-red-600 hover:text-red-700">
-              <Trash2 className="h-4 w-4 mr-1" />
-              Delete
-            </Button>
+            {!isSharedView && (
+              <>
+                <Button size="sm" variant="outline" onClick={onBulkShare}>
+                  <Share2 className="h-4 w-4 mr-1" />
+                  Share
+                </Button>
+                <Button size="sm" variant="outline" onClick={onBulkDelete} className="text-red-600 hover:text-red-700">
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+              </>
+            )}
           </div>
         )}
 
-        {/* Upload and New Folder */}
-        <UploadModal />
-        
-        <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="outline">
-              <FolderPlus className="h-4 w-4 mr-1" />
-              New Folder
-            </Button>
-          </DialogTrigger>
+        {/* Upload and New Folder - Hidden in shared view */}
+        {!isSharedView && (
+          <>
+            <UploadModal />
+            
+            <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <FolderPlus className="h-4 w-4 mr-1" />
+                  New Folder
+                </Button>
+              </DialogTrigger>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Create New Folder</DialogTitle>
@@ -154,6 +164,8 @@ export function FileToolbar({
             </div>
           </DialogContent>
         </Dialog>
+        </>
+        )}
 
         {/* View toggle */}
         <div className="flex border border-neutral-200 rounded-md">

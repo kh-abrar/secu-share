@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, Home } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
 interface BreadcrumbItem {
   name: string;
@@ -36,23 +36,19 @@ export function Breadcrumbs({ path, onNavigate }: BreadcrumbsProps) {
 
   return (
     <nav className="flex items-center space-x-1 text-sm">
-      {breadcrumbs.map((item, index) => (
+      {breadcrumbs.slice(1).map((item, index) => (
         <React.Fragment key={item.path}>
-          {index === 0 && (
-            <Home className="h-4 w-4 text-neutral-500" />
-          )}
           <button
             onClick={() => onNavigate(item.path)}
             className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors ${
-              index === breadcrumbs.length - 1
+              index === breadcrumbs.slice(1).length - 1
                 ? 'text-neutral-900 font-medium'
                 : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
             }`}
           >
-            {index > 0 && item.name}
-            {index === 0 && 'Home'}
+            {item.name}
           </button>
-          {index < breadcrumbs.length - 1 && (
+          {index < breadcrumbs.slice(1).length - 1 && (
             <ChevronRight className="h-4 w-4 text-neutral-400" />
           )}
         </React.Fragment>

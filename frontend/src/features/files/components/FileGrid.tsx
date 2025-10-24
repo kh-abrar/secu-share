@@ -12,12 +12,15 @@ interface FileGridProps {
   selectedFiles: string[];
   onSelectFile: (fileId: string, selected: boolean) => void;
   onSelectAll: (selected: boolean) => void;
+  onFileClick?: (file: FileItem) => void;
   onFolderClick: (folder: FileItem) => void;
   onDownload: (file: FileItem) => void;
   onShare: (file: FileItem) => void;
   onDelete: (file: FileItem) => void;
   onRename: (file: FileItem) => void;
   onMove: (file: FileItem) => void;
+  isSharedView?: boolean;
+  isUnseen?: (file: FileItem) => boolean;
 }
 
 export function FileGrid({
@@ -25,12 +28,15 @@ export function FileGrid({
   selectedFiles,
   onSelectFile,
   onSelectAll,
+  onFileClick: _onFileClick,
   onFolderClick,
   onDownload,
   onShare,
   onDelete,
   onRename,
-  onMove
+  onMove,
+  isSharedView = false,
+  isUnseen
 }: FileGridProps) {
   const allSelected = files.length > 0 && files.every(file => selectedFiles.includes(file._id));
   const someSelected = selectedFiles.length > 0;
@@ -114,6 +120,16 @@ export function FileGrid({
                       Shared
                     </Badge>
                   )}
+                  {isUnseen && isUnseen(file) && (
+                    <Badge variant="destructive" className="text-xs px-2 py-1 ml-1">
+                      New
+                    </Badge>
+                  )}
+                  {file.shareLinkInfo?.requiresPassword && (
+                    <Badge variant="outline" className="text-xs px-2 py-1 ml-1 border-amber-300 text-amber-700">
+                      🔒 Password Protected
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
@@ -128,32 +144,36 @@ export function FileGrid({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {file.type === 'file' && (
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDownload(file); }}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </DropdownMenuItem>
+                  )}
+                  {!isSharedView && (
                     <>
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDownload(file); }}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Download
+                      {file.type === 'file' && (
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onShare(file); }}>
+                          <Share2 className="h-4 w-4 mr-2" />
+                          Share
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRename(file); }}>
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        Rename
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onShare(file); }}>
-                        <Share2 className="h-4 w-4 mr-2" />
-                        Share
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMove(file); }}>
+                        <FolderInput className="h-4 w-4 mr-2" />
+                        Move
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={(e) => { e.stopPropagation(); onDelete(file); }}
+                        className="text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
                       </DropdownMenuItem>
                     </>
                   )}
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRename(file); }}>
-                    <Edit3 className="h-4 w-4 mr-2" />
-                    Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMove(file); }}>
-                    <FolderInput className="h-4 w-4 mr-2" />
-                    Move
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={(e) => { e.stopPropagation(); onDelete(file); }}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

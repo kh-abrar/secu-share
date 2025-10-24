@@ -18,6 +18,14 @@ export interface FileItem {
   updatedAt?: string;
   url?: string; // For image previews
   shareUrl?: string; // For share links
+  shareLinkInfo?: {
+    token: string;
+    requiresPassword: boolean;
+  } | null;
+  hasShareLink?: boolean;
+  shareScope?: string;
+  ownerEmail?: string;
+  ownerName?: string;
 }
 
 export interface FileListResponse {

@@ -7,6 +7,7 @@ interface QuickActionsProps {
   onCreateFolder?: () => void;
   onShare?: () => void;
   allFiles?: FileItem[];
+  uploadModalRef?: React.RefObject<{ openModal: () => void }>;
 }
 
 export function QuickActions({ onUpload, onCreateFolder, onShare, allFiles = [] }: QuickActionsProps) {

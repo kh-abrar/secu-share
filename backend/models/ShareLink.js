@@ -18,6 +18,8 @@ const shareLinkSchema = new mongoose.Schema({
 
   revokedAt: { type: Date, default: null, index: true },
 
+  seenBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
   encryptionType: { type: String, default: null },
   iv: { type: String, default: null },
   encryptedKey: { type: String, default: null },

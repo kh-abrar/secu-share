@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { MoreVertical, Share2, Download, Trash2, Copy, Move, Edit3, FolderInput } from "lucide-react"
+import { MoreVertical, Share2, Download, Trash2, Copy, Edit3, FolderInput } from "lucide-react"
 import ShareDialog from "@/features/sharing/components/ShareDialog"
 import MoveModal from "@/features/files/components/MoveModal"
 import { useFilesByPath, useDeleteFile, useDownloadFile } from "@/features/files/hooks/useFilesByPath"
@@ -70,7 +70,7 @@ export default function FileTable() {
   }
 
 
-  const handleRename = (file: FileItem) => {
+  const handleRename = (_file: FileItem) => {
     // Implement rename logic
     toast({ title: "Rename functionality coming soon" })
   }

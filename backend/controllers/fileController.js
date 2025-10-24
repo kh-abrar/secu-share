@@ -394,12 +394,36 @@ exports.unshareWithUser = async (req, res) => {
 
 exports.getSharedWithMe = async (req, res) => {
   try {
-    const files = await File.find({ sharedWith: req.userId })
+    const ShareLink = require('../models/ShareLink');
+    
+    // Get files directly shared with user
+    const directlySharedFiles = await File.find({ sharedWith: req.userId })
       .populate('owner', 'name email')
       .sort({ createdAt: -1 });
 
+    // Get files shared via ShareLinks where user is in allowedUsers or allowedEmails
+    const userEmail = (req.userEmail || '').toLowerCase();
+    const shareLinks = await ShareLink.find({
+      $or: [
+        { allowedUsers: req.userId },
+        { allowedEmails: { $in: [userEmail] } }
+      ],
+      revokedAt: null
+    }).populate({
+      path: 'file',
+      populate: { path: 'owner', select: 'name email' }
+    });
+
+    // Combine both types of shared files
+    const allFiles = [...directlySharedFiles];
+    shareLinks.forEach(link => {
+      if (link.file && !allFiles.find(f => f._id.toString() === link.file._id.toString())) {
+        allFiles.push(link.file);
+      }
+    });
+
     // Return in same format as other file endpoints for consistency
-    const result = files.map(file => ({
+    const result = allFiles.map(file => ({
       _id: file._id,
       type: file.type,
       name: file.name,
@@ -419,6 +443,17 @@ exports.getSharedWithMe = async (req, res) => {
       accessLevel: file.accessLevel,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
+      // Add share link info for password-protected files
+      shareLinkInfo: shareLinks.find(link => 
+        link.file && link.file._id.toString() === file._id.toString()
+      ) ? {
+        token: shareLinks.find(link => 
+          link.file && link.file._id.toString() === file._id.toString()
+        )?.token,
+        requiresPassword: !!shareLinks.find(link => 
+          link.file && link.file._id.toString() === file._id.toString()
+        )?.passwordHash
+      } : null
     }));
 
     res.json(result);
@@ -457,15 +492,32 @@ exports.listByPath = async (req, res) => {
       }
     });
     
-    // Add URL for image files
-    const itemsWithUrls = items.map(item => {
+    // Add URL for image files and check for share links
+    const ShareLink = require('../models/ShareLink');
+    const itemsWithUrls = await Promise.all(items.map(async (item) => {
       const itemObj = item.toObject();
       if (item.type === 'file' && item.mimetype && item.mimetype.startsWith('image/')) {
         // Use the preview endpoint for image thumbnails
         itemObj.url = `/api/files/preview/${item._id}`;
       }
+      
+      // Check if this file has active share links
+      const shareLinks = await ShareLink.find({ 
+        file: item._id, 
+        revokedAt: null 
+      }).sort({ createdAt: -1 }).limit(1);
+      
+      if (shareLinks.length > 0) {
+        const shareLink = shareLinks[0];
+        itemObj.shareUrl = `${process.env.FRONTEND_URL || process.env.BASE_URL || `${req.protocol}://${req.get('host')}`}/share/${shareLink.token}`;
+        itemObj.hasShareLink = true;
+        itemObj.shareScope = shareLink.scope;
+      } else {
+        itemObj.hasShareLink = false;
+      }
+      
       return itemObj;
-    });
+    }));
     
     res.json({ items: itemsWithUrls });
   } catch (e) {

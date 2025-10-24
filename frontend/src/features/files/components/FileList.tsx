@@ -12,12 +12,15 @@ interface FileListProps {
   selectedFiles: string[];
   onSelectFile: (fileId: string, selected: boolean) => void;
   onSelectAll: (selected: boolean) => void;
+  onFileClick?: (file: FileItem) => void;
   onFolderClick: (folder: FileItem) => void;
   onDownload: (file: FileItem) => void;
   onShare: (file: FileItem) => void;
   onDelete: (file: FileItem) => void;
   onRename: (file: FileItem) => void;
   onMove: (file: FileItem) => void;
+  isSharedView?: boolean;
+  isUnseen?: (file: FileItem) => boolean;
 }
 
 export function FileList({
@@ -25,12 +28,15 @@ export function FileList({
   selectedFiles,
   onSelectFile,
   onSelectAll,
+  onFileClick: _onFileClick,
   onFolderClick,
   onDownload,
   onShare,
   onDelete,
   onRename,
-  onMove
+  onMove,
+  isSharedView = false,
+  isUnseen
 }: FileListProps) {
   const allSelected = files.length > 0 && files.every(file => selectedFiles.includes(file._id));
   const someSelected = selectedFiles.length > 0;
@@ -117,13 +123,24 @@ export function FileList({
             </div>
 
             {/* Shared status */}
-            <div className="col-span-1 flex items-center">
-              {isShared(file) ? (
+            <div className="col-span-1 flex items-center gap-1">
+              {isShared(file) && (
                 <Badge variant="secondary" className="text-xs">
                   <Users className="h-3 w-3 mr-1" />
                   Shared
                 </Badge>
-              ) : (
+              )}
+              {isUnseen && isUnseen(file) && (
+                <Badge variant="destructive" className="text-xs">
+                  New
+                </Badge>
+              )}
+              {file.shareLinkInfo?.requiresPassword && (
+                <Badge variant="outline" className="text-xs border-amber-300 text-amber-700">
+                  🔒 Password
+                </Badge>
+              )}
+              {!isShared(file) && (!isUnseen || !isUnseen(file)) && !file.shareLinkInfo?.requiresPassword && (
                 <span className="text-xs text-neutral-400">-</span>
               )}
             </div>
@@ -138,32 +155,36 @@ export function FileList({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {file.type === 'file' && (
+                    <DropdownMenuItem onClick={() => onDownload(file)}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </DropdownMenuItem>
+                  )}
+                  {!isSharedView && (
                     <>
-                      <DropdownMenuItem onClick={() => onDownload(file)}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Download
+                      {file.type === 'file' && (
+                        <DropdownMenuItem onClick={() => onShare(file)}>
+                          <Share2 className="h-4 w-4 mr-2" />
+                          Share
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={() => onRename(file)}>
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        Rename
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onShare(file)}>
-                        <Share2 className="h-4 w-4 mr-2" />
-                        Share
+                      <DropdownMenuItem onClick={() => onMove(file)}>
+                        <FolderInput className="h-4 w-4 mr-2" />
+                        Move
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => onDelete(file)}
+                        className="text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
                       </DropdownMenuItem>
                     </>
                   )}
-                  <DropdownMenuItem onClick={() => onRename(file)}>
-                    <Edit3 className="h-4 w-4 mr-2" />
-                    Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onMove(file)}>
-                    <FolderInput className="h-4 w-4 mr-2" />
-                    Move
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => onDelete(file)}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/app/providers/auth-provider';
 import api from '@/libs/api';
 
 interface ShareAccessResponse {
@@ -26,9 +27,11 @@ export default function ShareAccessPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+  const { user, isAuthenticated, fetchUser } = useAuth();
+
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [addingToAccount, setAddingToAccount] = useState(false);
   const [fileData, setFileData] = useState<ShareAccessResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [requiresPassword, setRequiresPassword] = useState(false);
@@ -39,6 +42,20 @@ export default function ShareAccessPage() {
       checkAccessRequirements();
     }
   }, [token]);
+
+  // Refresh auth state when page becomes visible (e.g., returning from login)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchUser();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchUser]);
 
   const checkAccessRequirements = async () => {
     try {
@@ -106,6 +123,41 @@ export default function ShareAccessPage() {
         title: "Download started",
         description: `Downloading ${fileData.metadata.originalName}`
       });
+    }
+  };
+
+  const handleAddToAccount = async () => {
+    if (!isAuthenticated) {
+      toast({
+        title: "Login required",
+        description: "Please login to add files to your account",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setAddingToAccount(true);
+    try {
+      const response = await api.post(`/share/add-to-account/${token}`, {
+        password: password.trim() || undefined
+      });
+      
+      toast({
+        title: "✅ File added to account",
+        description: `${response.data.file.originalName} has been added to your files`
+      });
+      
+      // Navigate to user's files
+      navigate('/dashboard/my-files');
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || 'Failed to add file to account';
+      toast({
+        title: "❌ Failed to add file",
+        description: errorMsg,
+        variant: "destructive"
+      });
+    } finally {
+      setAddingToAccount(false);
     }
   };
 
@@ -201,7 +253,27 @@ export default function ShareAccessPage() {
         {fileData && (
           <div className="text-center">
             <div className="mb-6">
-              {getFileIcon(fileData.metadata.mimetype)}
+              {/* Image Preview */}
+              {fileData.metadata.mimetype?.startsWith('image/') ? (
+                <div className="mb-4">
+                  <img 
+                    src={fileData.downloadUrl} 
+                    alt={fileData.metadata.originalName}
+                    className="max-w-full max-h-64 mx-auto rounded-lg shadow-md object-contain"
+                    onError={(e) => {
+                      // Fallback to icon if image fails to load
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                    }}
+                  />
+                  <div className="hidden">
+                    {getFileIcon(fileData.metadata.mimetype)}
+                  </div>
+                </div>
+              ) : (
+                getFileIcon(fileData.metadata.mimetype)
+              )}
+              
               <h1 className="text-2xl font-bold text-gray-900 mb-2 mt-4">
                 {fileData.metadata.originalName}
               </h1>
@@ -215,7 +287,7 @@ export default function ShareAccessPage() {
               )}
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               <Button 
                 onClick={handleDownload}
                 className="w-full bg-blue-600 hover:bg-blue-700"
@@ -226,6 +298,67 @@ export default function ShareAccessPage() {
                 </svg>
                 Download File
               </Button>
+
+              {/* Add to Account Button - Only show if user is authenticated */}
+              {isAuthenticated && (
+                <Button 
+                  onClick={handleAddToAccount}
+                  disabled={addingToAccount}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  size="lg"
+                >
+                  {addingToAccount ? (
+                    <>
+                      <svg className="w-5 h-5 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Adding to Account...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      Add to My Files
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {/* Login prompt for non-authenticated users */}
+              {!isAuthenticated && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800 mb-3">
+                    💡 Want to save this file to your account?
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => {
+                        // Save current share link to return after login
+                        sessionStorage.setItem('redirectAfterLogin', `/share/${token}`);
+                        navigate('/login');
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                    >
+                      Login
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        // Save current share link to return after signup
+                        sessionStorage.setItem('redirectAfterLogin', `/share/${token}`);
+                        navigate('/signup');
+                      }}
+                      variant="default"
+                      size="sm"
+                      className="flex-1"
+                    >
+                      Sign Up
+                    </Button>
+                  </div>
+                </div>
+              )}
               
               <Button 
                 variant="outline" 

@@ -57,6 +57,7 @@ export function useUploadFiles() {
     onSuccess: (_, variables) => {
       // Invalidate and refetch files for the path
       queryClient.invalidateQueries({ queryKey: ['files', variables.path || '/'] });
+      queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
     },
   });
 }
@@ -83,6 +84,7 @@ export function useUploadFolder() {
     onSuccess: (_, variables) => {
       // Invalidate and refetch files for the path
       queryClient.invalidateQueries({ queryKey: ['files', variables.relativePath || '/'] });
+      queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
     },
   });
 }
@@ -99,6 +101,7 @@ export function useDeleteFile() {
     onSuccess: () => {
       // Invalidate all file queries to refresh the list
       queryClient.invalidateQueries({ queryKey: ['files'] });
+      queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
     },
   });
 }
@@ -117,6 +120,7 @@ export function useCreateFolder() {
     onSuccess: (_, variables) => {
       // Invalidate and refetch files for the path
       queryClient.invalidateQueries({ queryKey: ['files', variables.path] });
+      queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
     },
   });
 }
@@ -135,6 +139,7 @@ export function useShareFile() {
     onSuccess: () => {
       // Invalidate all file queries to refresh the list with updated share status
       queryClient.invalidateQueries({ queryKey: ['files'] });
+      queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
     },
   });
 }
@@ -153,6 +158,7 @@ export function useUnshareFile() {
     onSuccess: () => {
       // Invalidate all file queries to refresh the list with updated share status
       queryClient.invalidateQueries({ queryKey: ['files'] });
+      queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
     },
   });
 }

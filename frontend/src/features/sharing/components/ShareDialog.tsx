@@ -139,142 +139,188 @@ export default function ShareDialog(props: ShareDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Share “{fileName}”</DialogTitle>
-        </DialogHeader>
-
-        {/* Link box */}
-        <div className="space-y-2">
-          <Label>Shareable Link</Label>
-          <div className="flex items-center gap-2">
-            <div className="flex w-full items-center rounded-md border px-3 py-2">
-              <Link2 className="mr-2 h-4 w-4 text-neutral-400" />
-              <input
-                readOnly
-                value={generatedLink}
-                className="w-full bg-transparent text-sm outline-none"
-              />
-            </div>
-            <Button variant="outline" onClick={copyToClipboard}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy
-            </Button>
-          </div>
+      <DialogContent className="sm:max-w-lg w-[95%] max-h-[90vh] p-0 flex flex-col overflow-hidden">
+        {/* Fixed Header */}
+        <div className="px-6 py-4 border-b border-neutral-200 bg-white">
+          <DialogHeader className="space-y-0">
+            <DialogTitle className="text-lg font-semibold text-neutral-900">Share "{fileName}"</DialogTitle>
+            <p className="text-sm text-neutral-500 mt-1">Configure sharing settings and access controls</p>
+          </DialogHeader>
         </div>
 
-        {/* Visibility */}
-        <div className="mt-4 space-y-2">
-          <Label>Access</Label>
-          <div className="flex flex-col gap-2 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="share-visibility"
-                value="public"
-                checked={visibility === "public"}
-                onChange={() => setVisibility("public")}
-              />
-              Public (anyone with the link)
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="share-visibility"
-                value="specific"
-                checked={visibility === "specific"}
-                onChange={() => setVisibility("specific")}
-              />
-              Specific users only
-            </label>
-          </div>
-        </div>
-
-        {/* Specific users input */}
-        {visibility === "specific" && (
-          <div className="mt-2 space-y-2">
-            <Label htmlFor="emails">Allowed Emails (comma-separated)</Label>
-            <Input
-              id="emails"
-              placeholder="alice@example.com, bob@example.com"
-              value={emailsCSV}
-              onChange={(e) => setEmailsCSV(e.target.value)}
-            />
-          </div>
-        )}
-
-        {/* Expiry */}
-        <div className="mt-4 space-y-2">
-          <Label>Link Expiry</Label>
-          <Select value={expiry} onValueChange={(v: Expiry) => setExpiry(v)}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Choose expiry" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="24h">24 hours</SelectItem>
-              <SelectItem value="7d">7 days</SelectItem>
-              <SelectItem value="never">Never</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Password Protection */}
-        <div className="mt-4 space-y-3">
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="passwordProtection"
-              checked={isPasswordEnabled}
-              onChange={(e) => setIsPasswordEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <Label htmlFor="passwordProtection" className="text-sm font-medium text-gray-700 flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              Enable Password Protection
-            </Label>
-          </div>
-          
-          {isPasswordEnabled && (
-            <div className="ml-6 space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm text-gray-600">Set Password</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={generateRandomPassword}
-                  className="text-xs"
-                >
-                  Generate Random
-                </Button>
+        {/* Scrollable Body */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+          {/* Link Section */}
+          <div className="space-y-3">
+            <div className="text-sm font-medium text-neutral-900">Shareable Link</div>
+            <div className="flex items-center gap-2">
+              <div className="flex w-full items-center rounded-lg border border-neutral-300 px-3 py-2 bg-neutral-50">
+                <Link2 className="mr-2 h-4 w-4 text-neutral-500" />
+                <input
+                  readOnly
+                  value={generatedLink}
+                  className="w-full bg-transparent text-sm outline-none text-neutral-700"
+                />
               </div>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password to protect shared file"
-                className="text-sm"
-              />
-              <p className="text-xs text-gray-500">
-                Recipients will need to enter this password once to access the file.
-              </p>
+              <Button 
+                variant="outline" 
+                onClick={copyToClipboard}
+                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Copy
+              </Button>
             </div>
-          )}
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-neutral-200"></div>
+
+          {/* Settings Section */}
+          <div className="space-y-5">
+            <div className="text-sm font-medium text-neutral-900">Sharing Settings</div>
+            
+            {/* Access Level & Expiry Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Access Level */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-neutral-700">Access Level</Label>
+                <div className="space-y-2">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="share-visibility"
+                      value="public"
+                      checked={visibility === "public"}
+                      onChange={() => setVisibility("public")}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-neutral-300"
+                    />
+                    <span className="text-sm text-neutral-700">Public link</span>
+                  </label>
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="share-visibility"
+                      value="specific"
+                      checked={visibility === "specific"}
+                      onChange={() => setVisibility("specific")}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-neutral-300"
+                    />
+                    <span className="text-sm text-neutral-700">Specific users</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Expiry */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-neutral-700">Link Expiry</Label>
+                <Select value={expiry} onValueChange={(v: Expiry) => setExpiry(v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Choose expiry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="24h">24 hours</SelectItem>
+                    <SelectItem value="7d">7 days</SelectItem>
+                    <SelectItem value="never">Never expires</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Specific users input */}
+            {visibility === "specific" && (
+              <div className="bg-blue-50 rounded-lg border border-blue-200 p-4 space-y-3">
+                <Label htmlFor="emails" className="text-sm font-medium text-blue-900">Allowed Emails</Label>
+                <Input
+                  id="emails"
+                  placeholder="alice@example.com, bob@example.com"
+                  value={emailsCSV}
+                  onChange={(e) => setEmailsCSV(e.target.value)}
+                  className="text-sm"
+                />
+                <p className="text-xs text-blue-700">
+                  Enter email addresses separated by commas
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-neutral-200"></div>
+
+          {/* Password Protection Section */}
+          <div className="space-y-3">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="passwordProtection"
+                checked={isPasswordEnabled}
+                onChange={(e) => setIsPasswordEnabled(e.target.checked)}
+                className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-neutral-300 rounded"
+              />
+              <Label htmlFor="passwordProtection" className="text-sm font-medium text-neutral-900 cursor-pointer flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Password Protection
+              </Label>
+            </div>
+            
+            {isPasswordEnabled && (
+              <div className="bg-amber-50 rounded-lg border border-amber-200 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-sm font-medium text-amber-900">Set Password</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={generateRandomPassword}
+                    className="text-xs border-amber-300 text-amber-700 hover:bg-amber-100"
+                  >
+                    Generate
+                  </Button>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password for file access"
+                  className="text-sm"
+                />
+                <p className="text-xs text-amber-700">
+                  Recipients will need this password to access the shared file.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Actions */}
-        <div className="mt-6 flex items-center justify-between">
-          <Button variant="destructive" onClick={handleRevoke}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Revoke Link
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button className="bg-accent text-white hover:opacity-90" onClick={handleSave}>
-              <Shield className="mr-2 h-4 w-4" />
-              Save Changes
+        {/* Fixed Footer */}
+        <div className="px-6 py-4 border-t border-neutral-200 bg-white">
+          <div className="flex items-center justify-between">
+            <Button 
+              variant="destructive" 
+              onClick={handleRevoke}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Revoke Link
             </Button>
+            <div className="flex items-center gap-3">
+              <Button 
+                variant="outline" 
+                onClick={() => onOpenChange(false)}
+                className="px-6"
+              >
+                Cancel
+              </Button>
+              <Button 
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6" 
+                onClick={handleSave}
+              >
+                <Shield className="mr-2 h-4 w-4" />
+                Save Changes
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

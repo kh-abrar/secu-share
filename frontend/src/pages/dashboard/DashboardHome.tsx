@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from "@/components/layout/PageHeader";
 import { FileToolbar } from "@/features/files/components/FileToolbar";
 import { FileGrid } from "@/features/files/components/FileGrid";
@@ -7,7 +8,7 @@ import { FileList } from "@/features/files/components/FileList";
 import { Breadcrumbs } from "@/components/common/Breadcrumbs";
 import ShareDialog from "@/features/sharing/components/ShareDialog";
 import MoveModal from "@/features/files/components/MoveModal";
-import { StatCard, StorageStatCard, RecentUploads, QuickActions } from "@/components/dashboard";
+import { StatCard, StorageStatCard } from "@/components/dashboard";
 import { useFilesByPath, useCreateFolder, useDeleteFile, useStorageUsage, useAllFiles } from "@/features/files/hooks/useFilesByPath";
 import { useAuthStore } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +20,7 @@ type SortType = 'name' | 'date' | 'size';
 
 export default function DashboardHome() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [currentPath, setCurrentPath] = useState('/');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -95,7 +97,10 @@ export default function DashboardHome() {
     if (!allFiles) return { totalFiles: 0, sharedFiles: 0, recentUploads: [] };
     
     const totalFiles = allFiles.filter(file => file.type === 'file').length;
-    const sharedFiles = allFiles.filter(file => file.sharedWith && file.sharedWith.length > 0).length;
+    // Count files that have share links (most accurate way to count shared files)
+    const sharedFiles = allFiles.filter(file => 
+      file.type === 'file' && file.hasShareLink === true
+    ).length;
     
     // Get recent uploads (files only, sorted by creation date)
     const recentUploads = allFiles
@@ -211,21 +216,6 @@ export default function DashboardHome() {
     toast({ title: "Rename functionality coming soon" });
   };
 
-  // Quick action handlers
-  const handleQuickUpload = () => {
-    toast({ title: "Upload functionality coming soon" });
-  };
-
-  const handleQuickCreateFolder = () => {
-    const name = prompt("Enter folder name:");
-    if (name) {
-      handleCreateFolder(name);
-    }
-  };
-
-  const handleQuickShare = () => {
-    toast({ title: "Please select a file to share" });
-  };
 
   const handleViewAllFiles = () => {
     navigate('/dashboard/my-files');
@@ -312,6 +302,10 @@ export default function DashboardHome() {
       if (shareFile) {
         setShareFile({ ...shareFile, shareUrl: (await response.json()).shareUrl });
       }
+      
+      // Invalidate files queries to refresh dashboard statistics
+      await queryClient.invalidateQueries({ queryKey: ['files'] });
+      await queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
     } catch (error: unknown) {
       const errorMsg = (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || (error as { message?: string })?.message || "Failed to create share link";
       toast({ 
@@ -411,27 +405,6 @@ export default function DashboardHome() {
             />
           </div>
 
-          {/* Quick Actions and Recent Uploads */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-            <QuickActions
-              onUpload={handleQuickUpload}
-              onCreateFolder={handleQuickCreateFolder}
-              onShare={handleQuickShare}
-              allFiles={allFiles}
-            />
-            
-            <RecentUploads
-              files={dashboardStats.recentUploads}
-              onFileClick={(file) => {
-                if (file.type === 'folder') {
-                  handleFolderClick(file);
-                } else {
-                  handleDownload(file);
-                }
-              }}
-              onViewAll={handleViewAllFiles}
-            />
-          </div>
 
           {/* File Browser Section */}
           <div className="bg-white/60 backdrop-blur-sm rounded-lg shadow-sm border border-gray-200/50">
@@ -520,6 +493,8 @@ export default function DashboardHome() {
           }}
         />
       )}
+
+
     </div>
   );
 }

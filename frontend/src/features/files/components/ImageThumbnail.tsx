@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { FileIcon as LucideFileIcon, Folder } from 'lucide-react';
 import { FileIcon } from '@/components/common/FileIcon';
 
 interface ImageThumbnailProps {
@@ -26,11 +25,6 @@ export function ImageThumbnail({ file, fileObject, className = '', size = 'md' }
     lg: 'w-16 h-16'
   };
 
-  const iconSizeClasses = {
-    sm: 'h-4 w-4',
-    md: 'h-6 w-6',
-    lg: 'h-8 w-8'
-  };
 
   useEffect(() => {
     if (file.type === 'folder' || !file.mimetype?.startsWith('image/')) {

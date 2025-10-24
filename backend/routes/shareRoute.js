@@ -9,6 +9,8 @@ const optionalAuth = require('../middlewares/optionalAuth');
 router.post('/create', authMiddleware, shareController.createShareLink);
 router.delete('/delete/:token', authMiddleware, shareController.deleteShareLink);
 router.post('/protected', authMiddleware, shareController.createProtectedShareLink);
+router.post('/add-to-account/:token', authMiddleware, shareController.addSharedFileToAccount);
+router.get('/unseen', authMiddleware, shareController.getUnseenSharedFiles);
 
 // Public access to shared file (optionally with Bearer token)
 router.get('/access/:token', optionalAuth, shareController.accessShareLink);

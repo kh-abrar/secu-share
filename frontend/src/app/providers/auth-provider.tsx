@@ -15,6 +15,7 @@ type AuthContextValue = {
   login: (c: Credentials) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
+  fetchUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -50,17 +51,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   const value = useMemo(
-    () => ({ 
-      user, 
-      loading, 
+    () => ({
+      user,
+      loading,
       isAuthenticated,
       error,
-      signup, 
-      login, 
+      signup,
+      login,
       logout,
-      clearError 
+      clearError,
+      fetchUser
     }),
-    [user, loading, isAuthenticated, error, clearError]
+    [user, loading, isAuthenticated, error, clearError, fetchUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

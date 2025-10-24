@@ -75,6 +75,7 @@ export default function FileCard({ file, onOpenFolder, onDeleted }: Props) {
       await api.delete(`/files/${file._id}`);
       onDeleted?.(file._id);
       queryClient.invalidateQueries({ queryKey: ['files'] });
+      queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
       toast({ title: "✅ File deleted successfully" });
     } catch (e: any) {
       toast({ 
@@ -115,6 +116,10 @@ export default function FileCard({ file, onOpenFolder, onDeleted }: Props) {
 
       const response = await api.post(endpoint, body);
       setShareUrl(response.data.shareUrl || response.data.url || null);
+      
+      // Invalidate files queries to refresh dashboard statistics
+      queryClient.invalidateQueries({ queryKey: ['files'] });
+      queryClient.invalidateQueries({ queryKey: ['files', 'all'] });
       
       toast({ 
         title: "✅ Share link created",

@@ -41,7 +41,15 @@ export default function LoginPage() {
   const onSubmit = async (values: FormValues) => {
     try {
       await login({ email: values.email, password: values.password });
-      navigate("/dashboard");
+
+      // Check if there's a redirect URL stored (e.g., from share page)
+      const redirectUrl = sessionStorage.getItem('redirectAfterLogin');
+      if (redirectUrl) {
+        sessionStorage.removeItem('redirectAfterLogin');
+        navigate(redirectUrl);
+      } else {
+        navigate("/dashboard");
+      }
     } catch (error) {
       // Error is handled by the auth store and displayed in the form
       console.error("Login failed:", error);

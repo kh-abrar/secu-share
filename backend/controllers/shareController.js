@@ -66,8 +66,12 @@ exports.createProtectedShareLink = async (req, res) => {
     const { fileId, password, expiresIn, maxAccess, scope, emails, userIds } = req.body;
 
     const file = await File.findById(fileId);
-    if (!file || file.owner.toString() !== req.userId.toString()) {
-      return res.status(403).json({ message: 'File not found or access denied' });
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    
+    if (file.owner.toString() !== req.userId.toString()) {
+      return res.status(403).json({ message: 'Access denied - You do not own this file' });
     }
 
     const token = generateToken();
@@ -153,6 +157,12 @@ exports.accessShareLink = async (req, res) => {
     }
 
     link.accessCount += 1;
+    
+    // Mark as seen by the user if they are logged in
+    if (userId && !link.seenBy.includes(userId)) {
+      link.seenBy.push(userId);
+    }
+    
     await link.save();
 
     // Check if this is a folder link
@@ -180,6 +190,87 @@ exports.accessShareLink = async (req, res) => {
   }
 };
 
+// Add shared file to user's account
+exports.addSharedFileToAccount = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+    const userId = req.userId;
+
+    // First verify access to the shared file
+    const link = await ShareLink.findOne({ token }).populate('file');
+    if (!link || !link.file) {
+      return res.status(404).json({ message: 'Share link not found' });
+    }
+
+    // Check if link is revoked or expired
+    if (link.revokedAt) {
+      return res.status(410).json({ message: 'Link revoked' });
+    }
+
+    const now = new Date();
+    if (link.expiresAt && now > link.expiresAt) {
+      return res.status(410).json({ message: 'Link expired' });
+    }
+
+    // Password check if required
+    if (link.passwordHash) {
+      if (!password) {
+        return res.status(401).json({ message: 'Password required' });
+      }
+      const ok = await bcrypt.compare(password, link.passwordHash);
+      if (!ok) {
+        return res.status(403).json({ message: 'Incorrect password' });
+      }
+    }
+
+    // Check if user already has this file
+    const existingFile = await File.findOne({
+      owner: userId,
+      name: link.file.name,
+      path: '/'
+    });
+
+    if (existingFile) {
+      return res.status(409).json({ message: 'File already exists in your account' });
+    }
+
+    // Create a copy of the file for the user
+    const newFile = new File({
+      type: link.file.type,
+      name: link.file.name,
+      path: '/', // Add to root directory
+      owner: userId,
+      filename: link.file.filename,
+      originalName: link.file.originalName,
+      mimetype: link.file.mimetype,
+      size: link.file.size,
+      encryptionType: link.file.encryptionType,
+      iv: link.file.iv,
+      encryptedKey: link.file.encryptedKey,
+      isPublic: false,
+      accessLevel: 'private'
+    });
+
+    await newFile.save();
+
+    res.json({
+      message: 'File added to your account successfully',
+      file: {
+        id: newFile._id,
+        name: newFile.name,
+        path: newFile.path,
+        originalName: newFile.originalName,
+        mimetype: newFile.mimetype,
+        size: newFile.size
+      }
+    });
+  } catch (error) {
+    console.error('Add shared file to account error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 exports.deleteShareLink = async (req, res) => {
   try {
     const { token } = req.params;
@@ -195,6 +286,30 @@ exports.deleteShareLink = async (req, res) => {
     res.json({ message: 'Share link revoked' });
   } catch (error) {
     console.error('Delete share link error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getUnseenSharedFiles = async (req, res) => {
+  try {
+    const unseenLinks = await ShareLink.find({
+      allowedUsers: req.userId,
+      seenBy: { $ne: req.userId },
+      revokedAt: null
+    }).populate('file', 'name size createdAt mimetype').populate('createdBy', 'name email');
+
+    res.json({ 
+      unseen: unseenLinks.length, 
+      unseenLinks: unseenLinks.map(link => ({
+        token: link.token,
+        file: link.file,
+        createdBy: link.createdBy,
+        createdAt: link.createdAt,
+        expiresAt: link.expiresAt
+      }))
+    });
+  } catch (error) {
+    console.error('Get unseen shared files error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
