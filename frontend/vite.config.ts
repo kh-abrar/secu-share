@@ -6,16 +6,20 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)), // ← no __dirname needed
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
   server: {
     port: 5173,
+    cors: {
+      origin: true,
+      credentials: true,
+    },
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'https://secu-share.duckdns.org', // ✅ HTTPS backend
         changeOrigin: true,
-        secure: false,
+        secure: true,
       },
     },
   },
