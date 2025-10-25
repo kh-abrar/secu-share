@@ -27,7 +27,7 @@ export default function ShareAccessPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user, isAuthenticated, fetchUser } = useAuth();
+  const { isAuthenticated, fetchUser } = useAuth();
 
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
