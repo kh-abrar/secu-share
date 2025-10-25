@@ -1,91 +1,132 @@
-// Load environment variables
+// server.js — HTTP backend version (safer)
+
 require('dotenv').config();
 
-// Dependencies
+const assertEnv = (name) => {
+  if (!process.env[name] || process.env[name].trim() === '') {
+    throw new Error(`Missing env variable: ${name}`);
+  }
+  return process.env[name];
+};
+
+const NODE_ENV = process.env.NODE_ENV || 'production';
+const PORT = parseInt(process.env.PORT || '4000', 10);
+const MONGODB_URI = assertEnv('MONGODB_URI');
+const SESSION_SECRET = assertEnv('SESSION_SECRET');
+const FRONTEND_URL = assertEnv('FRONTEND_URL');
+
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
-const path = require('path');
+const helmet = require('helmet');
+const compression = require('compression');
 const connectDB = require('./config/db');
 
-// Routes
 const authRoutes = require('./routes/authRoute');
 const fileRoutes = require('./routes/filesRoute');
 const shareRoutes = require('./routes/shareRoute');
 
 const app = express();
 
-// ✅ Required for Nginx / AWS load balancers
+// Required behind Nginx
 app.set('trust proxy', 1);
 
-// Middleware
-app.use(express.json());
+// Security headers
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
+
+// Performance
+app.use(compression());
+
+// Body & cookies
+app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
-// ✅ Allowed frontend origins
-const allowedOrigins = [
-  'http://localhost:5173', // Vite local dev
-  process.env.FRONTEND_URL // Vercel production
-];
+// Build allowlist
+const ALLOWED = new Set(
+  FRONTEND_URL.split(',').map((s) => s.trim())
+);
 
-// ✅ CORS FIXED FOR SESSION COOKIES
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // mobile, curl, postman
+// CORS
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
 
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-}));
+      if (ALLOWED.has(origin)) return cb(null, true);
 
-// ✅ Session configuration FIXED
+      // Allow local dev if NODE_ENV !== production
+      if (
+        NODE_ENV !== 'production' &&
+        origin.startsWith('http://localhost')
+      ) {
+        return cb(null, true);
+      }
+
+      if (origin.includes('vercel.app')) {
+        return cb(null, true);
+      }
+
+      cb(new Error(`Blocked by CORS: ${origin}`));
+    },
+    credentials: true,
+  })
+);
+
+// Sessions (HTTP backend rules)
 app.use(
   session({
     name: 'sid',
-    secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      secure: process.env.NODE_ENV === 'production', // must be true for sameSite=none
+      secure: false, // MUST be false on HTTP backend
+      sameSite: 'lax', // MUST NOT be "none" on HTTP backend
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
     store: MongoStore.create({
-      mongoUrl: process.env.MONGODB_URI,
+      mongoUrl: MONGODB_URI,
       ttl: 7 * 24 * 60 * 60,
     }),
   })
 );
 
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// API Routes
+// --- Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/share', shareRoutes);
 
-// Health Check (for debugging)
-app.get('/api/status', (req, res) => {
-  res.json({ ok: true, message: 'Backend is alive ✅' });
+// Health check
+app.get('/api/status', (_req, res) => {
+  res.json({
+    alive: true,
+    env: NODE_ENV,
+    httpsRequiredForSecureCookie: false,
+  });
 });
 
-// Start server
-const PORT = process.env.PORT || 5000;
-
+// Start
 connectDB()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+      console.log(`✅ Backend running HTTP on port ${PORT}`);
+      console.log(`✅ Allowed origins: ${[...ALLOWED].join(', ')}`);
     });
   })
   .catch((err) => {
-    console.error('Failed to connect to database:', err);
+    console.error('❌ DB failed:', err);
     process.exit(1);
   });
+
+// Global error handler
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ ok: false, error: err.message });
+});
