@@ -35,7 +35,8 @@ export function ImageThumbnail({ file, fileObject, className = '', size = 'md' }
     // If file has a URL, use it directly
     if (file.url) {
       // Make sure the URL is absolute
-      const fullUrl = file.url.startsWith('http') ? file.url : `http://localhost:4000${file.url}`;
+      const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:4000';
+      const fullUrl = file.url.startsWith('http') ? file.url : `${baseUrl}${file.url}`;
       setImageUrl(fullUrl);
       setIsLoading(false);
       return;

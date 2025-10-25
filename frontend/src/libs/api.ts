@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create axios instance with proper configuration for session-based auth
 const api = axios.create({
-  baseURL: 'http://localhost:4000/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api',
   withCredentials: true, // Important: sends session cookies with every request
   headers: {
     'Content-Type': 'application/json',
