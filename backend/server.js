@@ -1,7 +1,8 @@
-// server.js — HTTP backend version (safer)
+// server.js — production HTTP backend behind Nginx+DuckDNS
 
 require('dotenv').config();
 
+// ------------ ENV VALIDATION ------------
 const assertEnv = (name) => {
   if (!process.env[name] || process.env[name].trim() === '') {
     throw new Error(`Missing env variable: ${name}`);
@@ -15,6 +16,7 @@ const MONGODB_URI = assertEnv('MONGODB_URI');
 const SESSION_SECRET = assertEnv('SESSION_SECRET');
 const FRONTEND_URL = assertEnv('FRONTEND_URL');
 
+// ------------ DEPENDENCIES ------------
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -24,51 +26,46 @@ const helmet = require('helmet');
 const compression = require('compression');
 const connectDB = require('./config/db');
 
+// ------------ ROUTES ------------
 const authRoutes = require('./routes/authRoute');
 const fileRoutes = require('./routes/filesRoute');
 const shareRoutes = require('./routes/shareRoute');
 
 const app = express();
 
-// Required behind Nginx
+// ------------ TRUST REVERSE PROXY ------------
 app.set('trust proxy', 1);
 
-// Security headers
+// ------------ SECURITY HEADERS ------------
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
 
-// Performance
+// ------------ PERFORMANCE ------------
 app.use(compression());
 
-// Body & cookies
-app.use(express.json({ limit: '2mb' }));
-app.use(cookieParser());
-
-// Build allowlist
+// ------------ CORS (MUST BE FIRST) ------------
 const ALLOWED = new Set(
   FRONTEND_URL.split(',').map((s) => s.trim())
 );
 
-// CORS
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, true); // Postman, mobile, curl
 
       if (ALLOWED.has(origin)) return cb(null, true);
 
-      // Allow local dev if NODE_ENV !== production
+      if (origin.includes('vercel.app')) {
+        return cb(null, true);
+      }
+
       if (
         NODE_ENV !== 'production' &&
         origin.startsWith('http://localhost')
       ) {
-        return cb(null, true);
-      }
-
-      if (origin.includes('vercel.app')) {
         return cb(null, true);
       }
 
@@ -78,7 +75,9 @@ app.use(
   })
 );
 
-// Sessions (HTTP backend rules)
+// ------------ COOKIES + SESSION (MUST BE BEFORE express.json) ------------
+app.use(cookieParser());
+
 app.use(
   session({
     name: 'sid',
@@ -87,9 +86,9 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      secure: true, // required for SameSite=None
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     },
     store: MongoStore.create({
       mongoUrl: MONGODB_URI,
@@ -98,26 +97,31 @@ app.use(
   })
 );
 
-// --- Routes ---
+// ------------ BODY PARSER (AFTER SESSION!) ------------
+app.use(express.json({ limit: '2mb' }));
+
+// ------------ API ROUTES ------------
 app.use('/api/auth', authRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/share', shareRoutes);
 
-// Health check
+// ------------ HEALTH CHECK ------------
 app.get('/api/status', (_req, res) => {
   res.json({
     alive: true,
     env: NODE_ENV,
-    httpsRequiredForSecureCookie: false,
+    cookieSecure: true,
+    sameSite: 'none',
   });
 });
 
-// Start
+// ------------ CONNECT DB + RUN SERVER ------------
 connectDB()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`✅ Backend running HTTP on port ${PORT}`);
+      console.log(`✅ Backend running on port ${PORT}`);
       console.log(`✅ Allowed origins: ${[...ALLOWED].join(', ')}`);
+      console.log(`✅ NODE_ENV=${NODE_ENV}`);
     });
   })
   .catch((err) => {
@@ -125,7 +129,7 @@ connectDB()
     process.exit(1);
   });
 
-// Global error handler
+// ------------ GLOBAL ERROR HANDLER ------------
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(500).json({ ok: false, error: err.message });
