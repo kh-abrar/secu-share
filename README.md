@@ -5,7 +5,6 @@
 SecureShare is a **privacy-first, end-to-end encrypted file-sharing web application** that allows users to securely upload, share, and download files with fine-grained access control. The platform supports password-protected and expiring links, ensuring total control over how your files are shared.
 
 🔗 **Live Demo:** [https://secu-share-two.vercel.app/](https://secu-share-two.vercel.app/)  
-📦 **Backend Repository:** [https://github.com/kh-abrar/SecureShare](https://github.com/kh-abrar/SecureShare)
 
 ---
 
