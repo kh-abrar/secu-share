@@ -87,8 +87,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false, // MUST be false on HTTP backend
-      sameSite: 'lax', // MUST NOT be "none" on HTTP backend
+      secure: true,
+      sameSite: "none",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
     store: MongoStore.create({
