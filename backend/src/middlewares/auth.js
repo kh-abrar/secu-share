@@ -7,7 +7,8 @@ async function loadUser(req) {
   const id = req.session?.userId;
   if (!id) return null;
   const user = await User.findById(id).lean();
-  if (!user) {
+  // Account deleted, or a session from before the last password change
+  if (!user || (req.session.sessionVersion ?? 0) !== (user.sessionVersion ?? 0)) {
     req.session.userId = undefined;
     return null;
   }
@@ -32,4 +33,4 @@ function requireVerified(req, _res, next) {
   next();
 }
 
-module.exports = { requireAuth, optionalAuth, requireVerified };
+module.exports = { loadUser, requireAuth, optionalAuth, requireVerified };

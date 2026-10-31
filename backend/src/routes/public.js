@@ -13,7 +13,7 @@ const { validate, base64 } = require('../lib/validate');
 const { conflict, HttpError } = require('../lib/errors');
 const { fileDto } = require('../services/serializers');
 const { authorizeLink, consumeDownload } = require('../services/links');
-const { storageUsed } = require('../services/files');
+const { storageUsed, createFileWithinQuota } = require('../services/files');
 
 const router = express.Router();
 
@@ -66,24 +66,28 @@ router.post(
     await consumeDownload(link);
     const storageKey = storage.newKey(owner);
     await storage.copy(src.storageKey, storageKey);
+    let copy;
     try {
-      const copy = await File.create({
-        owner,
-        type: 'file',
-        name: src.name,
-        path: '/',
-        storageKey,
-        mimetype: src.mimetype,
-        size: src.size,
-        encryptedSize: src.encryptedSize,
-        wrappedKey,
-      });
-      res.status(201).json(fileDto(copy));
+      copy = await createFileWithinQuota(
+        {
+          owner,
+          type: 'file',
+          name: src.name,
+          path: '/',
+          storageKey,
+          mimetype: src.mimetype,
+          size: src.size,
+          encryptedSize: src.encryptedSize,
+          wrappedKey,
+        },
+        config.STORAGE_QUOTA_BYTES
+      );
     } catch (err) {
-      await storage.deleteMany([storageKey]).catch(() => {});
       if (err.code === 11000) throw conflict(`You already have a file named "${src.name}" in your root folder`);
       throw err;
     }
+    if (!copy) throw new HttpError(413, 'Storage quota exceeded');
+    res.status(201).json(fileDto(copy));
   }
 );
 

@@ -20,7 +20,7 @@ const { validate, objectId, email, base64 } = require('../lib/validate');
 const { nameSchema, pathSchema, childPath, ancestorsOf, escapeRegex } = require('../lib/paths');
 const { badRequest, conflict, notFound, HttpError } = require('../lib/errors');
 const { fileDto, linkDto, recipientDto } = require('../services/serializers');
-const { deleteItems, storageUsed, ensureFolders } = require('../services/files');
+const { deleteItems, storageUsed, ensureFolders, createFileWithinQuota, descendantsOf } = require('../services/files');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -139,16 +139,18 @@ router.post('/', limits.upload, upload.single('file'), async (req, res) => {
 
     const storageKey = storage.newKey(owner);
     await storage.putFile(storageKey, tmp);
+    let file;
     try {
-      const file = await File.create({
-        owner, type: 'file', name, path: dir, storageKey, mimetype, size, encryptedSize, wrappedKey: key,
-      });
-      res.status(201).json(fileDto(file));
+      file = await createFileWithinQuota(
+        { owner, type: 'file', name, path: dir, storageKey, mimetype, size, encryptedSize, wrappedKey: key },
+        config.STORAGE_QUOTA_BYTES
+      );
     } catch (err) {
-      await storage.deleteMany([storageKey]).catch(() => {});
       if (err.code === 11000) throw conflict(`"${dir}${name}" already exists`, { reason: 'exists' });
       throw err;
     }
+    if (!file) throw new HttpError(413, 'Storage quota exceeded');
+    res.status(201).json(fileDto(file));
   } finally {
     if (tmp) await fs.promises.rm(tmp, { force: true });
   }
@@ -222,22 +224,34 @@ router.patch(
       throw conflict('An item with this name already exists there');
     }
 
+    // For a folder, descendants are moved first and moved back if the folder itself can't
+    // be saved, so a failure never leaves them under a folder that doesn't exist
+    const newFull = childPath(newPath, newName);
+    const descendantIds =
+      item.type === 'folder' ? await File.find(descendantsOf(owner, item)).distinct('_id') : [];
+    if (descendantIds.length) await rewritePathPrefix(descendantIds, oldFull, newFull);
+
     item.name = newName;
     item.path = newPath;
-    await item.save();
-
-    if (item.type === 'folder') {
-      const newFull = childPath(newPath, newName);
-      // Rewrite the prefix of every descendant's path. Byte offsets are used because the
-      // prefix is matched exactly, so its UTF-8 length is the cut point.
-      await File.updateMany(
-        { owner, path: { $regex: `^${escapeRegex(oldFull)}` } },
-        [{ $set: { path: { $concat: [newFull, { $substrBytes: ['$path', Buffer.byteLength(oldFull), -1] }] } } }]
-      );
+    try {
+      await item.save();
+    } catch (err) {
+      if (descendantIds.length) await rewritePathPrefix(descendantIds, newFull, oldFull);
+      // Another request created the same name in the meantime
+      if (err.code === 11000) throw conflict('An item with this name already exists there');
+      throw err;
     }
     res.json(fileDto(item));
   }
 );
+
+// Replaces the leading `from` of each item's path with `to`. Byte offsets are used because
+// `from` is matched exactly, so its UTF-8 length is the cut point.
+function rewritePathPrefix(ids, from, to) {
+  return File.updateMany({ _id: { $in: ids }, path: { $regex: `^${escapeRegex(from)}` } }, [
+    { $set: { path: { $concat: [to, { $substrBytes: ['$path', Buffer.byteLength(from), -1] }] } } },
+  ]);
+}
 
 // ---------- delete ----------
 

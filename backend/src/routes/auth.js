@@ -9,7 +9,7 @@ const File = require('../models/File');
 const Share = require('../models/Share');
 const ShareLink = require('../models/ShareLink');
 const limits = require('../middlewares/rateLimits');
-const { requireAuth } = require('../middlewares/auth');
+const { loadUser, requireAuth } = require('../middlewares/auth');
 const { validate, email, base64, authHash } = require('../lib/validate');
 const { badRequest, conflict, unauthorized } = require('../lib/errors');
 const { userDto, keysDto } = require('../services/serializers');
@@ -41,6 +41,7 @@ const clearSessionCookie = (res) =>
 async function startSession(req, user) {
   await regenerate(req);
   req.session.userId = String(user._id);
+  req.session.sessionVersion = user.sessionVersion ?? 0;
 }
 
 async function issueVerification(user, log) {
@@ -114,7 +115,7 @@ router.post('/logout', async (req, res) => {
 });
 
 router.get('/me', async (req, res) => {
-  const user = req.session?.userId ? await User.findById(req.session.userId).lean() : null;
+  const user = await loadUser(req);
   res.json({ user: user ? userDto(user) : null });
 });
 
@@ -162,6 +163,8 @@ router.post(
     user.passwordHash = await bcrypt.hash(newAuthHash, BCRYPT_COST);
     user.encryptedPrivateKey = encryptedPrivateKey;
     user.privateKeyIv = privateKeyIv;
+    // Signs out every other session; this one continues under a fresh id
+    user.sessionVersion = (user.sessionVersion ?? 0) + 1;
     await user.save();
 
     await startSession(req, user);

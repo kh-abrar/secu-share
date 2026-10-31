@@ -2,6 +2,8 @@
 
 End-to-end encrypted file storage and sharing. Files are encrypted in the browser before upload; the server only ever stores ciphertext and never sees file contents, file keys, or your password.
 
+![SecuShare: the My Files view, with folders and encrypted files](screenshot.png)
+
 - **Private storage**: folders, drag-and-drop uploads (including whole folders), rename, move, delete, per-user quota.
 - **Share with people**: share a file with another registered user; it appears in their *Shared with me*.
 - **Share links**: anyone-with-the-link or specific-people-only, optional password, expiry and download limit, revocable at any time.
@@ -86,6 +88,7 @@ Each file has its own random key. Content is encrypted in 1 MiB chunks; each chu
 
 - **There is no password recovery.** A forgotten password means the files can't be decrypted. Changing your password (while you know it) is supported and keeps all files.
 - **You trust the served code.** As with any web-based end-to-end encryption, a compromised server could serve modified JavaScript. Self-hosting removes that third party.
+- **Recipients' public keys come from the server.** When you share with a person, the browser encrypts the file key with the public key the server returns for their email. A malicious server could return its own key instead. Messengers such as Signal counter this by letting users compare key fingerprints; SecuShare does not do that yet.
 - **A share link is a capability.** Anyone with the full link can open a public link. Use a password, expiry, download limit, or a specific-people link for sensitive files, and revoke links you no longer need.
 - **Specific-people access requires a verified email.** This stops someone from registering another person's address first to receive files meant for them.
 - Unlocked keys are kept in the browser (IndexedDB, as non-extractable keys) until you sign out.

@@ -1,6 +1,7 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers');
+const File = require('../src/models/File');
 
 before(h.setup);
 after(h.teardown);
@@ -69,6 +70,23 @@ describe('upload and download', () => {
     const stats = await agent.get('/api/files/stats');
     assert.equal(stats.body.files, 2);
   });
+
+  it('keeps concurrent uploads within the quota', async () => {
+    const { agent } = await h.createUser('quota-race@example.com');
+    const twoMb = Buffer.alloc(2 * 1024 * 1024 - 1024);
+    const blobs = h.storedBlobCount();
+    const results = await Promise.all(
+      ['1', '2', '3', '4'].map((name) => h.uploadFile(agent, { name, content: twoMb }))
+    );
+
+    const created = results.filter((r) => r.status === 201).length;
+    assert.ok(results.every((r) => r.status === 201 || r.status === 413));
+    assert.ok(created <= 2, `${created} uploads accepted`);
+    const stats = await agent.get('/api/files/stats');
+    assert.ok(stats.body.used <= stats.body.quota);
+    assert.equal(stats.body.files, created);
+    assert.equal(h.storedBlobCount(), blobs + created, 'rejected uploads leave no blobs');
+  });
 });
 
 describe('ownership', () => {
@@ -109,6 +127,24 @@ describe('folders, rename and move', () => {
     const { body: g2 } = await h.uploadFile(agent, { name: 'g.txt' }).expect(201);
     await agent.patch(`/api/files/${g2._id}`).send({ path: '/dest/' }).expect(409);
     await agent.patch(`/api/files/${g2._id}`).send({ path: '/missing/' }).expect(400);
+  });
+
+  it('reports a name clash that slips past the check, and puts the contents back', async () => {
+    const { agent } = await h.createUser('mover3@example.com');
+    await h.uploadFile(agent, { name: 'inside.txt', path: '/a/' }).expect(201);
+    await agent.post('/api/files/folders').send({ name: 'b', path: '/' }).expect(201);
+    const a = (await agent.get('/api/files?path=/')).body.items.find((i) => i.name === 'a');
+
+    // Simulate another request creating "b" between the check and the save
+    const exists = File.exists;
+    File.exists = async () => null;
+    try {
+      await agent.patch(`/api/files/${a._id}`).send({ name: 'b' }).expect(409);
+    } finally {
+      File.exists = exists;
+    }
+    assert.deepEqual(names(await agent.get('/api/files?path=/a/')), ['inside.txt']);
+    assert.deepEqual(names(await agent.get('/api/files?path=/b/')), []);
   });
 
   it('refuses to move a folder into itself', async () => {
