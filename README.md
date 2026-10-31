@@ -1,160 +1,173 @@
-# 🔐 SecureShare – File Sharing Platform
+# SecuShare
 
-![Dashboard Screenshot](./screenshot.png)
+End-to-end encrypted file storage and sharing. Files are encrypted in the browser before upload; the server only ever stores ciphertext and never sees file contents, file keys, or your password.
 
-SecureShare is a **privacy-first, end-to-end encrypted file-sharing web application** that allows users to securely upload, share, and download files with fine-grained access control. The platform supports password-protected and expiring links, ensuring total control over how your files are shared.
+- **Private storage**: folders, drag-and-drop uploads (including whole folders), rename, move, delete, per-user quota.
+- **Share with people**: share a file with another registered user; it appears in their *Shared with me*.
+- **Share links**: anyone-with-the-link or specific-people-only, optional password, expiry and download limit, revocable at any time.
+- **Accounts**: email verification, password change, account deletion.
 
-🔗 **Live Demo:** [https://secu-share-two.vercel.app/](https://secu-share-two.vercel.app/)  
+## Contents
 
----
+- [Quick start (Docker)](#quick-start-docker)
+- [Local development](#local-development)
+- [Security model](#security-model)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Project structure](#project-structure)
+- [API overview](#api-overview)
+- [License](#license)
 
-## 🚀 Features
+## Quick start (Docker)
 
-### ✅ Core Functionalities
+Requires Docker with Compose v2.
 
-#### 🔒 Authentication
-- JWT-based signup/login system using email and password.
-- Secure password hashing with `bcrypt`.
-- Authenticated routes with middleware protection (`/api/auth/me`).
-
-#### ☁️ File Upload & Storage
-- Authenticated users can upload and manage files.
-- Files securely stored on **AWS S3** using pre-signed URLs.
-- Organized folder structure for better file management.
-
-#### 🔗 Secure Sharing
-- Generate shareable download links with:
-  - Optional **expiry time**
-  - **Access control** (public or specific users only)
-  - **Password-protected sharing** for additional security
-  - One-time or unlimited access modes
-
-#### 👥 Access Control
-- Share files publicly, privately, or with selected users.
-- Only authorized users can view or download private files.
-- File access logged and verified via JWT validation.
-
-#### 🧭 Dashboard & File Management
-- Modern, responsive dashboard with:
-  - Total and shared file counts
-  - Storage usage tracking
-  - File search, sorting, and filtering
-- Support for images, documents, and text previews
-- Folder creation and structured browsing
-
----
-
-## 🧰 Tech Stack
-
-| Layer | Technology |
-|-------|-------------|
-| **Frontend** | React.js, Tailwind CSS |
-| **Backend** | Node.js, Express.js |
-| **Database** | MongoDB (Mongoose ODM) |
-| **Storage** | AWS S3 (Pre-signed URLs) |
-| **Authentication** | JWT, bcrypt |
-| **Deployment** | Backend: AWS EC2 (Nginx + PM2) <br> Frontend: Vercel |
-
----
-
-## ⚙️ Installation Guide
-
-### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/kh-abrar/SecureShare.git
-cd SecureShare
-2️⃣ Backend Setup
-bash
-Copy code
-cd backend
-npm install
-Create .env file:
-env
-Copy code
-PORT=5000
-MONGO_URI=your_mongodb_connection_string
-JWT_SECRET=your_jwt_secret
-AWS_ACCESS_KEY_ID=your_aws_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret
-AWS_REGION=your_region
-S3_BUCKET_NAME=your_bucket_name
-Run the server:
-bash
-Copy code
-npm start
-Backend will be available at http://localhost:5000
+git clone <this repo> secu-share && cd secu-share
+cp .env.example .env
+# Set SESSION_SECRET in .env, e.g. to the output of: openssl rand -base64 48
+docker compose up -d --build
+```
 
-3️⃣ Frontend Setup
-bash
-Copy code
+- App: http://localhost:8080
+- Emails (verification links): http://localhost:8025 (Mailpit catches all outgoing mail locally)
+
+This starts MongoDB, Mailpit, the API, and the web app (nginx serving the SPA and proxying `/api`). Uploaded files are kept in the `uploads` volume.
+
+## Local development
+
+Requires Node.js 22+ and a MongoDB instance (e.g. `docker run -d -p 27017:27017 mongo:7`).
+
+```bash
+# API: http://localhost:4000
+cd backend
+cp .env.example .env      # defaults work with a local MongoDB
+npm install
+npm run dev
+
+# Web app: http://localhost:5173 (proxies /api to the API)
 cd frontend
 npm install
 npm run dev
-Frontend will be available at http://localhost:5173
+```
 
-🔧 Deployment Overview
-Backend deployed on AWS EC2 using:
+Without SMTP configured, verification links are printed in the API log.
 
-Nginx as reverse proxy for HTTPS and routing
+### Checks
 
-PM2 for Node.js process management
+| | API (`backend/`) | Web (`frontend/`) |
+|---|---|---|
+| Tests | `npm test`: integration tests against an in-memory MongoDB | `npm test`: crypto unit tests |
+| Lint | `npm run lint` | `npm run lint` |
+| Types | n/a | `npm run typecheck` |
 
-Frontend deployed on Vercel
+CI runs all of these, plus `npm audit` and a Docker build, on every push and pull request.
 
-MongoDB Atlas for cloud database
+## Security model
 
-AWS S3 for secure file storage
+### What is protected
 
-🧩 API Endpoints Overview
-Method	Endpoint	Description
-POST	/api/auth/register	User signup
-POST	/api/auth/login	User login
-GET	/api/auth/me	Get current user info
-POST	/api/files/upload	Upload file
-GET	/api/files	List user files
-POST	/api/share/create	Create share link
-POST	/api/share/protected	Create password-protected share link
-GET	/api/share/access/:token	Access shared file
-DELETE	/api/share/delete/:token	Delete shared link
+| Data | Who can read it |
+|---|---|
+| File contents | Only you and the people you share with. Encrypted with AES-256-GCM in the browser. |
+| File keys | Stored only *wrapped* with RSA-OAEP-3072 public keys (yours, and each recipient's). |
+| Your password | Never sent. The browser derives two independent values from it (PBKDF2-SHA256, 600,000 iterations, then HKDF): an auth hash sent to the server (stored with bcrypt), and a key that encrypts your private key. |
+| Share-link keys | Carried in the URL fragment (`/share/<token>#<key>`), which browsers never send to servers. |
 
-🧱 Folder Structure
-arduino
-Copy code
-SecureShare/
-├── backend/
-│   ├── controllers/
-│   ├── middlewares/
-│   ├── models/
-│   ├── routes/
-│   ├── utils/
-│   └── server.js
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── hooks/
-│   │   ├── utils/
-│   │   └── App.jsx
-│   └── vite.config.js
-└── README.md
-🛡️ Security Highlights
-End-to-end encryption for file transmission.
+Each file has its own random key. Content is encrypted in 1 MiB chunks; each chunk authenticates its position and whether it is the last one, so tampering, reordering, or truncation is detected on download.
 
-All credentials hashed using bcrypt.
+### What the server can see
 
-JWT-based authentication for all protected routes.
+- File and folder **names**, sizes, MIME types, and folder structure
+- Who shares which file with whom, and when
+- Account emails and names, IP addresses, access times
 
-Pre-signed S3 URLs for secure, time-limited access.
+### Things to know
 
-Password-protected links for sensitive files.
+- **There is no password recovery.** A forgotten password means the files can't be decrypted. Changing your password (while you know it) is supported and keeps all files.
+- **You trust the served code.** As with any web-based end-to-end encryption, a compromised server could serve modified JavaScript. Self-hosting removes that third party.
+- **A share link is a capability.** Anyone with the full link can open a public link. Use a password, expiry, download limit, or a specific-people link for sensitive files, and revoke links you no longer need.
+- **Specific-people access requires a verified email.** This stops someone from registering another person's address first to receive files meant for them.
+- Unlocked keys are kept in the browser (IndexedDB, as non-extractable keys) until you sign out.
 
-Strict CORS and HTTPS enforcement via Nginx.
+### Server-side hardening
 
-📸 UI Overview
-Dashboard: File summary, usage stats, upload & folder management.
+Session cookies are `HttpOnly`, and the session ID is regenerated on login. Cross-site writes are blocked by an Origin check, and CORS uses an exact allowlist. Login and share-link passwords are rate-limited, and login timing is equalised. Every request body is validated (zod). Response objects are explicitly serialised, so internal fields never leak. Uploads are streamed to disk, never buffered in memory. Download limits are enforced atomically. Storage keys are random, so names can never collide.
 
-My Files: Manage files (rename, move, delete, share).
+## Configuration
 
-Shared With Me: View files shared by other users.
+The API validates its environment at startup and exits with a readable message if anything is wrong. See [`backend/.env.example`](backend/.env.example) for every option. The most important:
 
-Share Modal: Configure password & expiry settings for links.
+| Variable | Default | Purpose |
+|---|---|---|
+| `MONGODB_URI` | required | MongoDB connection string |
+| `SESSION_SECRET` | required | At least 32 random characters |
+| `FRONTEND_URL` | required | Public app URL(s), comma-separated; used for CORS and email links |
+| `COOKIE_SAMESITE` | `lax` | `none` if the app and API are on different sites |
+| `COOKIE_SECURE` | `true` in production | Must be `true` when served over HTTPS |
+| `TRUST_PROXY` | `0` | Number of reverse proxies in front of the API |
+| `STORAGE_DRIVER` | `local` | `local` (disk) or `s3` (AWS S3, MinIO, Cloudflare R2, ...) |
+| `MAX_FILE_SIZE` | 100 MiB | Per-file limit |
+| `STORAGE_QUOTA_BYTES` | 10 GiB | Per-user quota |
+| `SMTP_HOST`, `MAIL_FROM`, ... | unset | Email delivery for verification links |
+
+Web app build variables (see [`frontend/.env.example`](frontend/.env.example)): `VITE_API_URL` (only if the API is on another origin) and `VITE_MAX_FILE_SIZE`.
+
+## Deployment
+
+**Recommended: one origin.** Serve the web app and the API from the same domain, either with the bundled `docker-compose.yml` behind an HTTPS reverse proxy (Caddy, Traefik, nginx), or any setup that routes `/api` to the API. Then set:
+
+```
+APP_URL=https://files.example.com
+COOKIE_SECURE=true
+```
+
+and configure real SMTP.
+
+**Split hosting** (e.g. the web app on Vercel, the API elsewhere). `frontend/vercel.json` already contains SPA rewrites and security headers.
+
+- Web app: `VITE_API_URL=https://api.example.com/api`
+- API: `FRONTEND_URL=https://your-app.vercel.app`, `COOKIE_SAMESITE=none`, `COOKIE_SECURE=true`, and `TRUST_PROXY=1` if the API sits behind a proxy.
+- Preview deployments: `CORS_ORIGIN_PATTERN=^https://your-app-[a-z0-9-]+\.vercel\.app$`
+
+Some browsers restrict third-party cookies, so the single-origin setup is more robust.
+
+Rate limits are kept in memory. If you run several API instances, plug a shared store into `backend/src/middlewares/rateLimits.js`.
+
+## Project structure
+
+```
+backend/                 Express 5 API (Node 22, MongoDB/Mongoose)
+  src/
+    config/              Environment validation
+    routes/              auth, files, links, shared-with-me, users, public (share links)
+    services/            File deletion/quota, link access rules, mailer, serializers
+    storage/             Local disk and S3-compatible blob storage
+    middlewares/         Auth, rate limits, origin guard, errors
+    models/              User, File, Share, ShareLink
+  test/                  Integration tests (node:test, supertest, in-memory MongoDB)
+frontend/                React 19 + Vite + Tailwind SPA
+  src/
+    libs/crypto.ts       All client-side cryptography (+ tests)
+    libs/keyStore.ts     IndexedDB storage for unlocked keys
+    features/            auth, files, sharing, upload
+    pages/               Route components
+docker-compose.yml       MongoDB + Mailpit + API + web
+```
+
+## API overview
+
+All endpoints are under `/api` and use JSON, except uploads (`multipart/form-data`) and file content (`application/octet-stream`, always ciphertext).
+
+| Area | Endpoints |
+|---|---|
+| Auth | `POST /auth/register`, `/auth/login`, `/auth/logout`, `/auth/verify-email`, `/auth/resend-verification`, `/auth/change-password`; `GET /auth/me`, `/auth/keys`; `DELETE /auth/account` |
+| Files | `GET /files?path=`, `/files/folders`, `/files/recent`, `/files/stats`, `/files/:id/content`; `POST /files` (upload), `/files/folders`, `/files/bulk-delete`; `PATCH /files/:id` (rename/move); `DELETE /files/:id` |
+| Sharing | `GET/POST /files/:id/links`, `DELETE /links/:id`, `GET /links`; `GET/POST /files/:id/shares`, `DELETE /files/:id/shares/:userId`; `GET /users/lookup?email=` |
+| Shared with me | `GET /shared-with-me`, `/shared-with-me/unseen-count`; `POST /shared-with-me/mark-seen`; `DELETE /shared-with-me/:shareId` |
+| Share links (public) | `POST /public/links/:token` (info), `/public/links/:token/download`, `/public/links/:token/save` |
+| Health | `GET /health` |
+
+## License
+
+Copyright 2026 Khandaker Abrar Yasir. Licensed under the [Apache License, Version 2.0](LICENSE).

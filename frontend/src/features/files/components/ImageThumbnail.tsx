@@ -1,124 +1,74 @@
-import { useState, useEffect } from 'react';
-import { FileIcon } from '@/components/common/FileIcon';
+import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { FileIcon } from "@/components/common/FileIcon";
+import { cn } from "@/libs/utils";
+import { useDecryptedContent } from "../hooks";
+import type { FileItem } from "../types";
 
-interface ImageThumbnailProps {
-  file: {
-    _id: string;
-    name: string;
-    type?: string;
-    mimetype?: string;
-    url?: string;
-  };
-  fileObject?: File; // For newly uploaded files
-  className?: string;
-  size?: 'sm' | 'md' | 'lg';
+// Thumbnails require downloading and decrypting the whole image in the browser
+const MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024;
+
+const SIZES = { sm: "h-8 w-8", md: "h-12 w-12", lg: "h-16 w-16" };
+
+function useInView<T extends Element>() {
+  const ref = useRef<T>(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || inView) return;
+    const observer = new IntersectionObserver(([entry]) => entry.isIntersecting && setInView(true), { rootMargin: "200px" });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [inView]);
+  return [ref, inView] as const;
 }
 
-export function ImageThumbnail({ file, fileObject, className = '', size = 'md' }: ImageThumbnailProps) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
+interface ImageThumbnailProps {
+  file: FileItem;
+  size?: keyof typeof SIZES;
+  className?: string;
+}
 
-  const sizeClasses = {
-    sm: 'w-8 h-8',
-    md: 'w-12 h-12',
-    lg: 'w-16 h-16'
-  };
+export function ImageThumbnail({ file, size = "md", className }: ImageThumbnailProps) {
+  const previewable =
+    file.type === "file" && !!file.mimetype?.startsWith("image/") && (file.size ?? Infinity) <= MAX_THUMBNAIL_BYTES;
+  const [ref, inView] = useInView<HTMLDivElement>();
+  const getContent = useDecryptedContent();
 
+  const { data: blob } = useQuery({
+    queryKey: ["thumbnail", file._id, file.updatedAt],
+    queryFn: () => getContent(file),
+    enabled: previewable && inView,
+    staleTime: Infinity,
+    gcTime: 5 * 60_000,
+    retry: false,
+  });
 
+  const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
-    if (file.type === 'folder' || !file.mimetype?.startsWith('image/')) {
-      setIsLoading(false);
-      return;
-    }
+    if (!blob) return;
+    const objectUrl = URL.createObjectURL(blob);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [blob]);
 
-    // If file has a URL, use it directly
-    if (file.url) {
-      // Make sure the URL is absolute
-      const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:4000';
-      const fullUrl = file.url.startsWith('http') ? file.url : `${baseUrl}${file.url}`;
-      setImageUrl(fullUrl);
-      setIsLoading(false);
-      return;
-    }
+  const box = cn(SIZES[size], "flex shrink-0 items-center justify-center overflow-hidden rounded-md border", className);
 
-    // For newly uploaded files without URL, generate from file object
-    if (fileObject && fileObject.type.startsWith('image/')) {
-      const objectUrl = URL.createObjectURL(fileObject);
-      setImageUrl(objectUrl);
-      setIsLoading(false);
-    } else {
-      setHasError(true);
-      setIsLoading(false);
-    }
-  }, [file.url, file.mimetype, fileObject]);
-
-  // Cleanup object URLs on unmount
-  useEffect(() => {
-    return () => {
-      if (imageUrl && imageUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(imageUrl);
-      }
-    };
-  }, [imageUrl]);
-
-  const handleImageLoad = () => {
-    setIsLoading(false);
-    setHasError(false);
-  };
-
-  const handleImageError = () => {
-    setIsLoading(false);
-    setHasError(true);
-  };
-
-  if (file.type === 'folder') {
+  if (file.type === "folder") {
     return (
-      <div className={`${sizeClasses[size]} bg-yellow-50 rounded-md border border-yellow-200 flex items-center justify-center ${className}`}>
+      <div className={cn(box, "border-yellow-200 bg-yellow-50")}>
         <FileIcon type="folder" size={size} />
       </div>
     );
   }
 
-  if (!file.mimetype?.startsWith('image/')) {
-    return (
-      <div className={`${sizeClasses[size]} bg-neutral-100 rounded-md border flex items-center justify-center ${className}`}>
-        <FileIcon 
-          mimetype={file.mimetype} 
-          filename={file.name} 
-          size={size} 
-        />
-      </div>
-    );
-  }
-
-  if (hasError || !imageUrl) {
-    return (
-      <div className={`${sizeClasses[size]} bg-neutral-100 rounded-md border flex items-center justify-center ${className}`}>
-        <FileIcon 
-          mimetype={file.mimetype} 
-          filename={file.name} 
-          size={size} 
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className={`${sizeClasses[size]} relative overflow-hidden rounded-md border bg-neutral-100 ${className}`}>
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-neutral-600"></div>
-        </div>
+    <div ref={ref} className={cn(box, "bg-neutral-100")}>
+      {url ? (
+        <img src={url} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <FileIcon mimetype={file.mimetype ?? undefined} filename={file.name} size={size} />
       )}
-      <img
-        src={imageUrl}
-        alt={file.name}
-        className="w-full h-full object-cover"
-        loading="lazy"
-        onLoad={handleImageLoad}
-        onError={handleImageError}
-      />
     </div>
   );
 }

@@ -1,33 +1,29 @@
-import { createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter } from "react-router-dom";
 import App from "./App";
 import LoginPage from "@/pages/auth/LoginPage";
 import SignupPage from "@/pages/auth/SignupPage";
+import VerifyEmailPage from "@/pages/auth/VerifyEmailPage";
 import DashboardHome from "@/pages/dashboard/DashboardHome";
 import MyFiles from "@/pages/dashboard/MyFiles";
 import SharedWithMe from "@/pages/dashboard/SharedWithMe";
+import Settings from "@/pages/dashboard/Settings";
 import ShareAccessPage from "@/pages/share/ShareAccessPage";
+import NotFound from "@/pages/NotFound";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },
-  // Share access route (outside of App wrapper for public access)
+  { path: "/verify-email", element: <VerifyEmailPage /> },
   { path: "/share/:token", element: <ShareAccessPage /> },
-  { path: "/s/:token", element: <ShareAccessPage /> }, // Alternative short URL
   {
-    path: "/",
     element: <App />,
     children: [
-      { index: true, element: <DashboardHome /> },
-      { path: "dashboard", element: <DashboardHome /> },
-      { path: "dashboard/my-files", element: <MyFiles /> },
-      { path: "dashboard/shared", element: <SharedWithMe /> },
-      { path: "dashboard/upload", element: <div>Upload</div> },
-      // Legacy routes for backward compatibility
-      { path: "app", element: <DashboardHome /> },
-      { path: "app/my-files", element: <MyFiles /> },
-      { path: "app/shared", element: <SharedWithMe /> },
-      { path: "app/upload", element: <div>Upload</div> },
+      { path: "/", element: <Navigate to="/dashboard" replace /> },
+      { path: "/dashboard", element: <DashboardHome /> },
+      { path: "/files", element: <MyFiles /> },
+      { path: "/shared", element: <SharedWithMe /> },
+      { path: "/settings", element: <Settings /> },
     ],
   },
-  { path: "*", element: <div className="text-neutral-600">Not found</div> },
+  { path: "*", element: <NotFound /> },
 ]);

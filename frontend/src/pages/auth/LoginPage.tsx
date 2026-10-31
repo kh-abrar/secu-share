@@ -1,135 +1,81 @@
-import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
-
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuth } from "@/app/providers/auth-provider";
-import { CloudLogo, CloudBackdrop } from "@/components/branding";
+import { AuthLayout } from "@/components/layout/AuthLayout";
+import { errorMessage } from "@/libs/api";
+import { useAuth } from "@/features/auth/store";
+import { takeReturnPath } from "@/features/auth/redirect";
 
-
-const schema = z.object({
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(6, "Min 6 characters"),
-});
-type FormValues = z.infer<typeof schema>;
-
-
-
-
-/* ---------- page ---------- */
 export default function LoginPage() {
-  const { login, error, clearError } = useAuth();
   const navigate = useNavigate();
+  const { status, login, notice, clearNotice } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Clear error when component unmounts
-  useEffect(() => {
-    return () => clearError();
-  }, [clearError]);
+  if (status === "authenticated" && !busy) return <Navigate to="/dashboard" replace />;
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) });
-
-  const onSubmit = async (values: FormValues) => {
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    clearNotice();
     try {
-      await login({ email: values.email, password: values.password });
-
-      // Check if there's a redirect URL stored (e.g., from share page)
-      const redirectUrl = sessionStorage.getItem('redirectAfterLogin');
-      if (redirectUrl) {
-        sessionStorage.removeItem('redirectAfterLogin');
-        navigate(redirectUrl);
-      } else {
-        navigate("/dashboard");
-      }
-    } catch (error) {
-      // Error is handled by the auth store and displayed in the form
-      console.error("Login failed:", error);
+      await login(email.trim(), password);
+      navigate(takeReturnPath(), { replace: true });
+    } catch (err) {
+      setError(errorMessage(err, "Sign in failed"));
+      setBusy(false);
     }
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-neutral-50">
-      <CloudBackdrop />
-
-      <div className="relative mx-auto flex min-h-screen max-w-6xl items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <CloudLogo />
-
-          <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-            <h1 className="mb-5 text-xl font-semibold tracking-tight">
-              Log in to SecureShare
-            </h1>
-
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-              {/* Error message */}
-              {error && (
-                <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-600">
-                  {error}
-                </div>
-              )}
-              
-              {/* Email */}
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  {...register("email")}
-                />
-                {errors.email && (
-                  <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
-                )}
-              </div>
-
-              {/* Password + show/hide */}
-              <div>
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPw ? "text" : "password"}
-                    autoComplete="current-password"
-                    {...register("password")}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw((s) => !s)}
-                    className="absolute inset-y-0 right-2 my-auto inline-flex items-center rounded p-1 text-neutral-500 hover:text-black"
-                    aria-label={showPw ? "Hide password" : "Show password"}
-                  >
-                    {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-                {errors.password && (
-                  <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
-                )}
-              </div>
-
-              <Button disabled={isSubmitting} className="h-10 w-full">
-                {isSubmitting ? "Continuing..." : "Continue"}
-              </Button>
-
-              <p className="text-center text-sm text-neutral-600">
-                No account?{" "}
-                <Link to="/signup" className="underline underline-offset-4">
-                  Create one
-                </Link>
-              </p>
-            </form>
+    <AuthLayout title="Sign in to SecuShare">
+      <form onSubmit={submit} className="space-y-4">
+        {(error || notice) && (
+          <div role="alert" className={`rounded-md border p-3 text-sm ${error ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+            {error || notice}
+          </div>
+        )}
+        <div className="space-y-1">
+          <Label htmlFor="email">Email</Label>
+          <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="password">Password</Label>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPw ? "text" : "password"}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw((s) => !s)}
+              className="absolute inset-y-0 right-2 my-auto inline-flex items-center p-1 text-neutral-500 hover:text-black"
+              aria-label={showPw ? "Hide password" : "Show password"}
+            >
+              {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
           </div>
         </div>
-      </div>
-    </div>
+        <Button type="submit" disabled={busy || !email || !password} className="h-10 w-full">
+          {busy ? "Unlocking your keys…" : "Sign in"}
+        </Button>
+        <p className="text-center text-sm text-neutral-600">
+          No account?{" "}
+          <Link to="/signup" className="underline underline-offset-4">Create one</Link>
+        </p>
+      </form>
+    </AuthLayout>
   );
 }

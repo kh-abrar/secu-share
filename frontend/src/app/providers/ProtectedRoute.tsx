@@ -1,34 +1,23 @@
-import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from './auth-provider';
+import type { PropsWithChildren } from "react";
+import { Navigate, useLocation } from "react-router-dom";
+import { useAuth } from "@/features/auth/store";
+import { rememberReturnPath } from "@/features/auth/redirect";
 
-interface ProtectedRouteProps {
-  children: React.ReactNode;
-}
-
-/**
- * Protected route component that redirects to login if user is not authenticated
- */
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, loading, user } = useAuth();
+export function ProtectedRoute({ children }: PropsWithChildren) {
+  const status = useAuth((s) => s.status);
   const location = useLocation();
 
-  // Show loading state while checking authentication
-  if (loading) {
+  if (status === "loading") {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-neutral-900 mx-auto mb-4"></div>
-          <p className="text-neutral-600">Loading...</p>
-        </div>
+      <div className="flex min-h-screen items-center justify-center" role="status">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-neutral-200 border-t-neutral-900" />
+        <span className="sr-only">Loading…</span>
       </div>
     );
   }
-
-  // Redirect to login if not authenticated
-  if (!isAuthenticated || !user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  if (status !== "authenticated") {
+    rememberReturnPath(location.pathname + location.search);
+    return <Navigate to="/login" replace />;
   }
-
   return <>{children}</>;
 }
-

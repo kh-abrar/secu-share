@@ -1,185 +1,82 @@
-import { useMemo, useState, useEffect } from "react";
-import type { FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, CheckCircle2, XCircle } from "lucide-react";
+import { useState } from "react";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/app/providers/auth-provider";
-import { CloudLogo, CloudBackdrop } from "@/components/branding";
-
-
-const inputCls =
-  "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/20";
-
-
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AuthLayout } from "@/components/layout/AuthLayout";
+import { PasswordStrength } from "@/components/common/PasswordStrength";
+import { isStrongPassword } from "@/features/auth/password";
+import { errorMessage } from "@/libs/api";
+import { useAuth } from "@/features/auth/store";
+import { takeReturnPath } from "@/features/auth/redirect";
 
 export default function SignupPage() {
-  const { signup, loading, error, clearError } = useAuth();
   const navigate = useNavigate();
-
-  // Clear error when component unmounts
-  useEffect(() => {
-    return () => clearError();
-  }, [clearError]);
-
+  const { status, register } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
+  const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [understood, setUnderstood] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // password complexity (8+, upper, lower, digit, special)
-  const strong = useMemo(() => {
-    const len = pw.length >= 8;
-    const upper = /[A-Z]/.test(pw);
-    const lower = /[a-z]/.test(pw);
-    const digit = /\d/.test(pw);
-    const special = /[^A-Za-z0-9]/.test(pw);
-    return len && upper && lower && digit && special;
-  }, [pw]);
+  if (status === "authenticated" && !busy) return <Navigate to="/dashboard" replace />;
 
-  const match = useMemo(() => pw.length > 0 && pw === confirm, [pw, confirm]);
+  const valid =
+    name.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && isStrongPassword(password) && password === confirm && understood;
 
-  const canSubmit = strong && match && /\S+@\S+\.\S+/.test(email) && name.trim().length > 0;
-
-  async function onSubmit(e: FormEvent) {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!valid) return;
+    setBusy(true);
+    setError(null);
     try {
-      await signup({ email, password: pw, name });
-
-      // Check if there's a redirect URL stored (e.g., from share page)
-      const redirectUrl = sessionStorage.getItem('redirectAfterLogin');
-      if (redirectUrl) {
-        sessionStorage.removeItem('redirectAfterLogin');
-        navigate(redirectUrl);
-      } else {
-        navigate("/dashboard");
-      }
-    } catch (error) {
-      // Error is handled by the auth store and displayed in the form
-      console.error("Signup failed:", error);
+      await register(name.trim(), email.trim(), password);
+      navigate(takeReturnPath(), { replace: true });
+    } catch (err) {
+      setError(errorMessage(err, "Sign up failed"));
+      setBusy(false);
     }
-  }
+  };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-neutral-50">
-      <CloudBackdrop />
-
-      <div className="relative mx-auto flex min-h-screen max-w-6xl items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <CloudLogo />
-
-          <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-            <h1 className="mb-5 text-xl font-semibold tracking-tight">
-              Create your SecureShare Account
-            </h1>
-
-            <form onSubmit={onSubmit} className="space-y-4" noValidate>
-              {/* Error message */}
-              {error && (
-                <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-600">
-                  {error}
-                </div>
-              )}
-              
-              {/* Name */}
-              <div className="space-y-1.5">
-                <label htmlFor="name" className="text-sm font-medium">Name</label>
-                <input
-                  id="name"
-                  className={inputCls}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                />
-              </div>
-
-              {/* Email */}
-              <div className="space-y-1.5">
-                <label htmlFor="email" className="text-sm font-medium">Email</label>
-                <input
-                  id="email"
-                  type="email"
-                  className={inputCls}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                />
-              </div>
-
-              {/* Password */}
-              <div className="space-y-1.5">
-                <label htmlFor="password" className="text-sm font-medium">Password</label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    type={showPw ? "text" : "password"}
-                    className={inputCls}
-                    value={pw}
-                    onChange={(e) => setPw(e.target.value)}
-                    autoComplete="new-password"
-                    aria-describedby="pw-status"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw((s) => !s)}
-                    className="absolute inset-y-0 right-2 my-auto inline-flex items-center rounded p-1 text-neutral-500 hover:text-black"
-                    aria-label={showPw ? "Hide password" : "Show password"}
-                  >
-                    {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-
-                {/* Confirm */}
-                <div className="relative">
-                  <input
-                    id="confirm"
-                    type={showConfirm ? "text" : "password"}
-                    className={inputCls}
-                    placeholder="Confirm password"
-                    value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
-                    autoComplete="new-password"
-                    aria-describedby="pw-status"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirm((s) => !s)}
-                    className="absolute inset-y-0 right-2 my-auto inline-flex items-center rounded p-1 text-neutral-500 hover:text-black"
-                    aria-label={showConfirm ? "Hide confirm password" : "Show confirm password"}
-                  >
-                    {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-
-                {/* Status block */}
-                <div id="pw-status" className="rounded-lg border bg-neutral-50 p-3 text-sm">
-                  <div className={`flex items-center gap-2 ${strong ? "text-green-600" : "text-neutral-600"}`}>
-                    {strong ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5 text-neutral-400" />}
-                    Min 8 chars, include A–Z, a–z, 0–9, and a special
-                  </div>
-                  <div className={`mt-1 flex items-center gap-2 ${match ? "text-green-600" : "text-neutral-600"}`}>
-                    {match ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5 text-neutral-400" />}
-                    Passwords match
-                  </div>
-                </div>
-              </div>
-
-              <Button className="h-10 w-full" disabled={!canSubmit || loading}>
-                {loading ? "Creating..." : "Create account"}
-              </Button>
-
-              <p className="text-center text-sm text-neutral-600">
-                Already have an account?{" "}
-                <Link className="underline underline-offset-4" to="/login">
-                  Log in
-                </Link>
-              </p>
-            </form>
-          </div>
+    <AuthLayout title="Create your account">
+      <form onSubmit={submit} className="space-y-4">
+        {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        <div className="space-y-1">
+          <Label htmlFor="name">Name</Label>
+          <Input id="name" autoComplete="name" maxLength={80} required value={name} onChange={(e) => setName(e.target.value)} />
         </div>
-      </div>
-    </div>
+        <div className="space-y-1">
+          <Label htmlFor="email">Email</Label>
+          <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="password">Password</Label>
+          <Input id="password" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordStrength password={password} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="confirm">Confirm password</Label>
+          <Input id="confirm" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          {confirm && confirm !== password && <p className="text-xs text-red-600">Passwords don't match</p>}
+        </div>
+        <label className="flex cursor-pointer items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <input type="checkbox" className="mt-0.5" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
+          <span>
+            I understand my files are encrypted with this password. <strong>If I forget it, my files cannot be recovered</strong>, not even
+            by the server operator.
+          </span>
+        </label>
+        <Button type="submit" disabled={!valid || busy} className="h-10 w-full">
+          {busy ? "Generating encryption keys…" : "Create account"}
+        </Button>
+        <p className="text-center text-sm text-neutral-600">
+          Already have an account?{" "}
+          <Link to="/login" className="underline underline-offset-4">Sign in</Link>
+        </p>
+      </form>
+    </AuthLayout>
   );
 }

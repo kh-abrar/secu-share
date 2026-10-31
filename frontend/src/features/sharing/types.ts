@@ -1,41 +1,47 @@
+export type LinkScope = "public" | "restricted";
+export type LinkExpiry = "1h" | "24h" | "7d" | "30d" | "never";
+
 export interface ShareLink {
-  _id: string;
+  id: string;
   token: string;
   fileId: string;
-  fileName?: string;
-  createdBy: string;
-  password?: string;
-  expiresAt?: string;
-  accessCount?: number;
-  maxAccess?: number;
+  scope: LinkScope;
+  allowedEmails: string[];
+  hasPassword: boolean;
+  expiresAt: string | null;
+  maxDownloads: number | null;
+  downloadCount: number;
+  expired: boolean;
   createdAt: string;
-  updatedAt: string;
 }
 
-export interface CreateShareLinkRequest {
-  fileId: string;
+export interface Recipient {
+  recipientId: string;
+  name: string;
+  email: string;
+  sharedAt: string;
+}
+
+export interface CreateLinkInput {
+  scope: LinkScope;
+  emails: string[];
   password?: string;
-  expiresIn?: number; // in hours
-  maxAccess?: number;
+  expiresIn: LinkExpiry;
+  maxDownloads: number | null;
 }
 
-export interface CreateShareLinkResponse {
-  link: ShareLink;
-  url: string;
+export interface PublicLinkInfo {
+  file: { name: string; mimetype: string | null; size: number | null };
+  owner: { name: string };
+  scope: LinkScope;
+  expiresAt: string | null;
+  downloadsRemaining: number | null;
 }
 
-export interface AccessShareLinkRequest {
-  token: string;
-  password?: string;
-}
-
-export interface AccessShareLinkResponse {
-  file: {
-    _id: string;
-    name: string;
-    mimetype: string;
-    size: number;
-  };
-  downloadUrl: string;
-}
-
+export const EXPIRY_LABELS: Record<LinkExpiry, string> = {
+  "1h": "1 hour",
+  "24h": "24 hours",
+  "7d": "7 days",
+  "30d": "30 days",
+  never: "Never",
+};

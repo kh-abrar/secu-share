@@ -1,376 +1,196 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/app/providers/auth-provider';
-import api from '@/libs/api';
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Download, FolderInput, Lock, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AuthLayout } from "@/components/layout/AuthLayout";
+import { FileIcon } from "@/components/common/FileIcon";
+import { useToast } from "@/hooks/use-toast";
+import api, { errorMessage, errorReason } from "@/libs/api";
+import { decryptFile, importFileKey, wrapFileKey } from "@/libs/crypto";
+import { formatDate, formatFileSize, saveBlob } from "@/libs/utils";
+import { useAuth } from "@/features/auth/store";
+import { rememberReturnPath } from "@/features/auth/redirect";
+import type { PublicLinkInfo } from "@/features/sharing/types";
 
-interface ShareAccessResponse {
-  downloadUrl: string;
-  metadata: {
-    originalName: string;
-    mimetype: string;
-    encryptionType?: string;
-    iv?: string;
-    encryptedKey?: string;
-    owner: {
-      name?: string;
-      email?: string;
-    };
-  };
-}
+type State =
+  | { kind: "loading" }
+  | { kind: "password"; error?: string }
+  | { kind: "login"; message: string }
+  | { kind: "ready"; info: PublicLinkInfo }
+  | { kind: "error"; message: string };
 
 export default function ShareAccessPage() {
-  const { token } = useParams<{ token: string }>();
+  const { token = "" } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { isAuthenticated, fetchUser } = useAuth();
+  const { status: authStatus, keys } = useAuth();
 
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [addingToAccount, setAddingToAccount] = useState(false);
-  const [fileData, setFileData] = useState<ShareAccessResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [requiresPassword, setRequiresPassword] = useState(false);
+  const [fileKey, setFileKey] = useState<CryptoKey | null>(null);
+  const [state, setState] = useState<State>({ kind: "loading" });
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState<"download" | "save" | null>(null);
+  const [progress, setProgress] = useState(0);
 
+  // The decryption key travels in the URL fragment, which is never sent to the server
   useEffect(() => {
-    if (token) {
-      // First, try to access without password to check if password is required
-      checkAccessRequirements();
-    }
-  }, [token]);
-
-  // Refresh auth state when page becomes visible (e.g., returning from login)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchUser();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [fetchUser]);
-
-  const checkAccessRequirements = async () => {
-    try {
-      const response = await api.get(`/share/access/${token}`);
-      setFileData(response.data);
-      setError(null);
-    } catch (err: any) {
-      if (err.response?.status === 401) {
-        setRequiresPassword(true);
-        setError(null);
-      } else {
-        const errorMsg = err.response?.data?.message || 'Failed to access shared file';
-        setError(errorMsg);
-      }
-    }
-  };
-
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password.trim()) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await api.get(`/share/access/${token}`, {
-        params: { password: password.trim() }
-      });
-      
-      setFileData(response.data);
-      setRequiresPassword(false);
-      setError(null);
-      
-      toast({
-        title: "Access granted",
-        description: "You can now download the file."
-      });
-    } catch (err: any) {
-      const errorMsg = err.response?.data?.message || 'Failed to access shared file';
-      setError(errorMsg);
-      
-      toast({
-        title: "Access denied",
-        description: errorMsg,
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDownload = () => {
-    if (fileData?.downloadUrl) {
-      // Create a temporary link to download the file
-      const link = document.createElement('a');
-      link.href = fileData.downloadUrl;
-      link.download = fileData.metadata.originalName;
-      link.style.display = 'none';
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      toast({
-        title: "Download started",
-        description: `Downloading ${fileData.metadata.originalName}`
-      });
-    }
-  };
-
-  const handleAddToAccount = async () => {
-    if (!isAuthenticated) {
-      toast({
-        title: "Login required",
-        description: "Please login to add files to your account",
-        variant: "destructive"
-      });
+    const encoded = location.hash.slice(1);
+    if (!encoded) {
+      setState({ kind: "error", message: "This link is incomplete. Ask the sender to copy the full link again." });
       return;
     }
+    importFileKey(encoded).then(setFileKey, () =>
+      setState({ kind: "error", message: "This link is damaged. Ask the sender to copy the full link again." })
+    );
+  }, [location.hash]);
 
-    setAddingToAccount(true);
+  const handleError = useCallback((err: unknown) => {
+    const reason = errorReason(err);
+    if (reason === "password_required") setState({ kind: "password" });
+    else if (reason === "password_incorrect") setState({ kind: "password", error: "Incorrect password" });
+    else if (reason === "login_required") setState({ kind: "login", message: errorMessage(err) });
+    else setState({ kind: "error", message: errorMessage(err, "This link can't be opened") });
+  }, []);
+
+  const loadInfo = useCallback(
+    async (pw?: string) => {
+      try {
+        const { data } = await api.post<PublicLinkInfo>(`/public/links/${token}`, { password: pw || undefined });
+        setState({ kind: "ready", info: data });
+      } catch (err) {
+        handleError(err);
+      }
+    },
+    [token, handleError]
+  );
+
+  // Wait for the session check so restricted links see the signed-in user
+  useEffect(() => {
+    if (fileKey && authStatus !== "loading") void loadInfo();
+  }, [fileKey, authStatus, loadInfo]);
+
+  const download = async (info: PublicLinkInfo) => {
+    if (!fileKey) return;
+    setBusy("download");
+    setProgress(0);
     try {
-      const response = await api.post(`/share/add-to-account/${token}`, {
-        password: password.trim() || undefined
-      });
-      
-      toast({
-        title: "✅ File added to account",
-        description: `${response.data.file.originalName} has been added to your files`
-      });
-      
-      // Navigate to user's files
-      navigate('/dashboard/my-files');
-    } catch (err: any) {
-      const errorMsg = err.response?.data?.message || 'Failed to add file to account';
-      toast({
-        title: "❌ Failed to add file",
-        description: errorMsg,
-        variant: "destructive"
-      });
+      const { data } = await api.post<Blob>(
+        `/public/links/${token}/download`,
+        { password: password || undefined },
+        { responseType: "blob", onDownloadProgress: (e) => e.total && setProgress(e.loaded / e.total) }
+      );
+      saveBlob(await decryptFile(data, fileKey, info.file.mimetype || "application/octet-stream"), info.file.name);
+      if (info.downloadsRemaining !== null) {
+        setState({ kind: "ready", info: { ...info, downloadsRemaining: info.downloadsRemaining - 1 } });
+      }
+    } catch (err) {
+      toast({ title: "Download failed", description: errorMessage(err), variant: "destructive" });
     } finally {
-      setAddingToAccount(false);
+      setBusy(null);
     }
   };
 
-  const getFileIcon = (mimetype?: string) => {
-    if (!mimetype) {
-      return (
-        <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      );
+  const saveToAccount = async () => {
+    if (!fileKey || !keys) return;
+    setBusy("save");
+    try {
+      const wrappedKey = await wrapFileKey(fileKey, keys.publicKey);
+      await api.post(`/public/links/${token}/save`, { password: password || undefined, wrappedKey });
+      toast({ title: "Saved to My Files" });
+      navigate("/files");
+    } catch (err) {
+      toast({ title: "Couldn't save", description: errorMessage(err), variant: "destructive" });
+    } finally {
+      setBusy(null);
     }
-
-    if (mimetype.startsWith('image/')) {
-      return (
-        <svg className="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-      );
-    }
-
-    if (mimetype.includes('pdf')) {
-      return (
-        <svg className="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      );
-    }
-
-    return (
-      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    );
   };
 
-  if (!token) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="p-8 max-w-md w-full mx-4">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-4">Invalid Link</h1>
-            <p className="text-gray-600 mb-6">The share link you're trying to access is invalid.</p>
-            <Button onClick={() => navigate('/')}>Go to Dashboard</Button>
-          </div>
-        </Card>
-      </div>
-    );
-  }
+  const signIn = (to: "/login" | "/signup") => {
+    rememberReturnPath(location.pathname + location.hash);
+    navigate(to);
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <Card className="p-8 max-w-md w-full mx-4">
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800 text-sm">{error}</p>
+    <AuthLayout title="Shared file">
+      {state.kind === "loading" && <p className="py-6 text-center text-sm text-neutral-500">Opening link…</p>}
+
+      {state.kind === "error" && <p role="alert" className="rounded-md bg-red-50 p-4 text-sm text-red-700">{state.message}</p>}
+
+      {state.kind === "login" && (
+        <div className="space-y-4">
+          <p className="text-sm text-neutral-600">{state.message}. This file was shared with specific people.</p>
+          <div className="flex gap-2">
+            <Button className="flex-1" onClick={() => signIn("/login")}>Sign in</Button>
+            <Button className="flex-1" variant="outline" onClick={() => signIn("/signup")}>Create account</Button>
           </div>
-        )}
+        </div>
+      )}
 
-        {requiresPassword && !fileData && (
-          <div className="text-center">
-            <div className="mb-6">
-              <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">Password Required</h1>
-              <p className="text-gray-600">This shared file is password protected.</p>
-            </div>
-
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="password">Enter Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter the file password"
-                  className="mt-1"
-                  required
-                />
-              </div>
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={loading || !password.trim()}
-              >
-                {loading ? 'Verifying...' : 'Access File'}
-              </Button>
-            </form>
+      {state.kind === "password" && (
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void loadInfo(password);
+          }}
+        >
+          <p className="flex items-center gap-2 text-sm text-neutral-600">
+            <Lock className="h-4 w-4" /> This file is password protected.
+          </p>
+          <div className="space-y-1">
+            <Label htmlFor="link-password">Password</Label>
+            <Input id="link-password" type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+            {state.error && <p className="text-xs text-red-600">{state.error}</p>}
           </div>
-        )}
+          <Button type="submit" className="w-full" disabled={!password}>Unlock</Button>
+        </form>
+      )}
 
-        {fileData && (
-          <div className="text-center">
-            <div className="mb-6">
-              {/* Image Preview */}
-              {fileData.metadata.mimetype?.startsWith('image/') ? (
-                <div className="mb-4">
-                  <img 
-                    src={fileData.downloadUrl} 
-                    alt={fileData.metadata.originalName}
-                    className="max-w-full max-h-64 mx-auto rounded-lg shadow-md object-contain"
-                    onError={(e) => {
-                      // Fallback to icon if image fails to load
-                      e.currentTarget.style.display = 'none';
-                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                    }}
-                  />
-                  <div className="hidden">
-                    {getFileIcon(fileData.metadata.mimetype)}
-                  </div>
-                </div>
-              ) : (
-                getFileIcon(fileData.metadata.mimetype)
-              )}
-              
-              <h1 className="text-2xl font-bold text-gray-900 mb-2 mt-4">
-                {fileData.metadata.originalName}
-              </h1>
-              <p className="text-gray-600 mb-2">
-                Shared by {fileData.metadata.owner.name || fileData.metadata.owner.email || 'Unknown'}
+      {state.kind === "ready" && (
+        <div className="space-y-5">
+          <div className="flex items-center gap-4 rounded-lg border bg-neutral-50 p-4">
+            <FileIcon mimetype={state.info.file.mimetype ?? undefined} filename={state.info.file.name} size="lg" />
+            <div className="min-w-0">
+              <p className="truncate font-medium" title={state.info.file.name}>{state.info.file.name}</p>
+              <p className="text-xs text-neutral-500">
+                {formatFileSize(state.info.file.size)} · shared by {state.info.owner.name}
               </p>
-              {fileData.metadata.encryptionType && (
-                <p className="text-sm text-blue-600 mb-4">
-                  🔒 Encrypted file - Secure download
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <Button 
-                onClick={handleDownload}
-                className="w-full bg-blue-600 hover:bg-blue-700"
-                size="lg"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Download File
-              </Button>
-
-              {/* Add to Account Button - Only show if user is authenticated */}
-              {isAuthenticated && (
-                <Button 
-                  onClick={handleAddToAccount}
-                  disabled={addingToAccount}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                  size="lg"
-                >
-                  {addingToAccount ? (
-                    <>
-                      <svg className="w-5 h-5 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      Adding to Account...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      Add to My Files
-                    </>
-                  )}
-                </Button>
-              )}
-
-              {/* Login prompt for non-authenticated users */}
-              {!isAuthenticated && (
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-800 mb-3">
-                    💡 Want to save this file to your account?
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => {
-                        // Save current share link to return after login
-                        sessionStorage.setItem('redirectAfterLogin', `/share/${token}`);
-                        navigate('/login');
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                    >
-                      Login
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        // Save current share link to return after signup
-                        sessionStorage.setItem('redirectAfterLogin', `/share/${token}`);
-                        navigate('/signup');
-                      }}
-                      variant="default"
-                      size="sm"
-                      className="flex-1"
-                    >
-                      Sign Up
-                    </Button>
-                  </div>
-                </div>
-              )}
-              
-              <Button 
-                variant="outline" 
-                onClick={() => navigate('/')}
-                className="w-full"
-              >
-                Go to Dashboard
-              </Button>
             </div>
           </div>
-        )}
-      </Card>
-    </div>
+
+          <ul className="space-y-1 text-xs text-neutral-500">
+            <li className="flex items-center gap-1">
+              <ShieldCheck className="h-3.5 w-3.5 text-green-600" /> Decrypted in your browser; the server only stores encrypted data.
+            </li>
+            {state.info.expiresAt && <li>Link expires {formatDate(state.info.expiresAt)}</li>}
+            {state.info.downloadsRemaining !== null && (
+              <li>{state.info.downloadsRemaining} download{state.info.downloadsRemaining === 1 ? "" : "s"} remaining</li>
+            )}
+          </ul>
+
+          <Button className="h-10 w-full" onClick={() => download(state.info)} disabled={!!busy || state.info.downloadsRemaining === 0}>
+            <Download className="mr-2 h-4 w-4" />
+            {busy === "download" ? `Downloading… ${Math.round(progress * 100)}%` : "Download"}
+          </Button>
+
+          {authStatus === "authenticated" ? (
+            <Button variant="outline" className="w-full" onClick={saveToAccount} disabled={!!busy || state.info.downloadsRemaining === 0}>
+              <FolderInput className="mr-2 h-4 w-4" /> {busy === "save" ? "Saving…" : "Save a copy to My Files"}
+            </Button>
+          ) : (
+            <p className="text-center text-xs text-neutral-500">
+              <button type="button" className="underline" onClick={() => signIn("/login")}>Sign in</button> to save a copy to your
+              own encrypted storage.
+            </p>
+          )}
+        </div>
+      )}
+
+      <p className="mt-6 text-center text-xs text-neutral-400">
+        <Link to="/" className="hover:underline">SecuShare</Link> · end-to-end encrypted file sharing
+      </p>
+    </AuthLayout>
   );
 }
