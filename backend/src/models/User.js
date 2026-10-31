@@ -14,6 +14,10 @@ const userSchema = new mongoose.Schema(
     encryptedPrivateKey: { type: String, required: true },
     privateKeyIv: { type: String, required: true },
 
+    // Bumped on password change. Sessions holding an older value are rejected, which
+    // signs out every other device.
+    sessionVersion: { type: Number, default: 0 },
+
     emailVerified: { type: Boolean, default: false },
     emailVerificationTokenHash: { type: String, default: null, select: false },
     emailVerificationExpires: { type: Date, default: null, select: false },

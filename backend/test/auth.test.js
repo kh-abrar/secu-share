@@ -128,6 +128,23 @@ describe('password change and account deletion', () => {
     assert.equal(ok.body.keys.encryptedPrivateKey, next.encryptedPrivateKey);
   });
 
+  it('signs out other sessions on password change, keeping the current one', async () => {
+    const { agent: laptop, creds } = await h.createUser('ivy@example.com');
+    const phone = request.agent(h.getApp());
+    await phone.post('/api/auth/login').send({ email: 'ivy@example.com', authHash: creds.authHash }).expect(200);
+    await phone.get('/api/files').expect(200);
+
+    const next = h.fakeCredentials();
+    await laptop
+      .post('/api/auth/change-password')
+      .send({ currentAuthHash: creds.authHash, newAuthHash: next.authHash, encryptedPrivateKey: next.encryptedPrivateKey, privateKeyIv: next.privateKeyIv })
+      .expect(200);
+
+    await laptop.get('/api/files').expect(200);
+    await phone.get('/api/files').expect(401);
+    assert.equal((await phone.get('/api/auth/me')).body.user, null);
+  });
+
   it('deletes the account with all its files and blobs', async () => {
     const { agent, creds, user } = await h.createUser('hank@example.com');
     await h.uploadFile(agent, { name: 'x.bin', path: '/docs/' }).expect(201);

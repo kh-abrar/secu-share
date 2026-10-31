@@ -47,6 +47,28 @@ async function storageUsed(ownerId) {
   return row?.used ?? 0;
 }
 
+/**
+ * Inserts a file record for an already stored blob, then re-checks the quota. The check
+ * before upload alone is racy: concurrent uploads could each pass it and together exceed
+ * the quota. Re-checking after the insert sees every committed file, so at least one of
+ * them backs out. Removes the blob if the file is not kept.
+ */
+async function createFileWithinQuota(doc, quota) {
+  let file;
+  try {
+    file = await File.create(doc);
+  } catch (err) {
+    await storage.deleteMany([doc.storageKey]).catch(() => {});
+    throw err;
+  }
+  if ((await storageUsed(doc.owner)) > quota) {
+    await File.deleteOne({ _id: file._id });
+    await storage.deleteMany([doc.storageKey]).catch(() => {});
+    return null;
+  }
+  return file;
+}
+
 // Creates any missing folders along a path, e.g. "/a/b/" creates "a" and "a/b"
 async function ensureFolders(ownerId, path) {
   let parent = '/';
@@ -67,4 +89,4 @@ async function ensureFolders(ownerId, path) {
   return {};
 }
 
-module.exports = { deleteItems, storageUsed, ensureFolders, descendantsOf };
+module.exports = { deleteItems, storageUsed, ensureFolders, descendantsOf, createFileWithinQuota };
