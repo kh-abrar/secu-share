@@ -33,7 +33,7 @@ const sizeClass: Record<ButtonSize, string> = {
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, asChild = false, variant = "default", size = "default", ...props }, ref) => {
-    const Comp: any = asChild ? Slot : "button"
+    const Comp = asChild ? Slot : "button"
     return (
       <Comp
         ref={ref}

@@ -1,37 +1,58 @@
-import axios from 'axios';
+import axios, { isAxiosError } from "axios";
 
-// Create axios instance with proper configuration for session-based auth
+/**
+ * API client. Defaults to same-origin "/api" (Vite dev proxy, bundled nginx);
+ * set VITE_API_URL when the API is hosted elsewhere.
+ */
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api',
-  withCredentials: true, // Important: sends session cookies with every request
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: import.meta.env.VITE_API_URL || "/api",
+  withCredentials: true,
 });
 
-// Store for auth state handler (will be set by the auth store)
-let unauthorizedHandler: (() => void) | null = null;
+let onUnauthorized: (() => void) | null = null;
 
-// Function to set the unauthorized handler from outside
-export const setUnauthorizedHandler = (handler: () => void) => {
-  unauthorizedHandler = handler;
-};
+/** Called when an authenticated request comes back 401 (session expired). */
+export function setUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler;
+}
 
-// Response interceptor to handle errors globally
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Handle 401 Unauthorized - user is not authenticated
-      console.warn('Unauthorized request detected - clearing auth state');
-      
-      // Call the handler if it's set (will clear auth state and redirect)
-      if (unauthorizedHandler) {
-        unauthorizedHandler();
+  (res) => res,
+  async (error) => {
+    // Requests made with responseType "blob" receive JSON error bodies as blobs
+    const data = error.response?.data;
+    if (data instanceof Blob && data.type.includes("json")) {
+      try {
+        error.response.data = JSON.parse(await data.text());
+      } catch {
+        // leave as-is
       }
     }
+    const url = String(error.config?.url ?? "");
+    // Auth and public-link endpoints use 401 for "wrong credentials", not "session expired"
+    const expected = url.startsWith("/auth/") || url.startsWith("/public/");
+    if (error.response?.status === 401 && !expected) onUnauthorized?.();
     return Promise.reject(error);
   }
 );
+
+/** Human-readable message from an API or runtime error. */
+export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
+  if (isAxiosError(err)) {
+    if (!err.response) return "Can't reach the server. Check your connection.";
+    const data = err.response.data as { message?: string } | Blob | undefined;
+    if (data && !(data instanceof Blob) && data.message) return data.message;
+    return fallback;
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+/** Machine-readable reason attached to some API errors (e.g. "password_required"). */
+export function errorReason(err: unknown): string | undefined {
+  if (!isAxiosError(err)) return undefined;
+  const data = err.response?.data as { details?: { reason?: string } } | undefined;
+  return data?.details?.reason;
+}
 
 export default api;

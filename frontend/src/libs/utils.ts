@@ -6,111 +6,60 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/**
- * Format file size in bytes to human readable format
- * @param bytes - File size in bytes
- * @returns Formatted string (e.g., "299.0 KB", "1.5 MB")
- */
-export function formatFileSize(bytes?: number): string {
-  if (!bytes || bytes === 0) return '-';
-  
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  return `${(kb / 1024).toFixed(1)} MB`;
+/** 1536 -> "1.5 KB" */
+export function formatFileSize(bytes?: number | null): string {
+  if (bytes === undefined || bytes === null) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
 
-/**
- * Format date to a readable format
- * @param dateString - Date string or Date object
- * @returns Formatted date string (e.g., "Oct 14, 2025")
- */
-export function formatDate(dateString?: string | Date): string {
-  if (!dateString) return '-';
-  
-  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
+/** "Oct 14, 2025" */
+export function formatDate(date?: string | Date | null): string {
+  if (!date) return "-";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-/**
- * Get file icon based on MIME type or file extension
- * @param mimetype - MIME type of the file
- * @param filename - Name of the file (for extension fallback)
- * @returns Icon name for lucide-react
- */
-export function getFileIcon(mimetype?: string, filename?: string): string {
-  if (!mimetype && !filename) return 'File';
-  
-  const mime = mimetype?.toLowerCase() || '';
-  const ext = filename?.split('.').pop()?.toLowerCase() || '';
-  
-  // Document types
-  if (mime.includes('pdf') || ext === 'pdf') return 'FileText';
-  if (mime.includes('document') || mime.includes('text') || ['doc', 'docx', 'txt', 'rtf'].includes(ext)) return 'FileText';
-  
-  // Image types
-  if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)) return 'Image';
-  
-  // Video types
-  if (mime.startsWith('video/') || ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'Video';
-  
-  // Audio types
-  if (mime.startsWith('audio/') || ['mp3', 'wav', 'flac', 'aac'].includes(ext)) return 'Music';
-  
-  // Archive types
-  if (mime.includes('zip') || mime.includes('rar') || mime.includes('7z') || ['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'Archive';
-  
-  // Code types
-  if (['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'scss', 'json', 'xml', 'py', 'java', 'cpp', 'c', 'php'].includes(ext)) return 'Code';
-  
-  // Spreadsheet types
-  if (mime.includes('spreadsheet') || ['xls', 'xlsx', 'csv'].includes(ext)) return 'Table';
-  
-  // Presentation types
-  if (mime.includes('presentation') || ['ppt', 'pptx'].includes(ext)) return 'Presentation';
-  
-  return 'File';
+/** Triggers a browser download for an in-memory (decrypted) blob. */
+export function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Give the browser time to start the download before releasing the memory
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/**
- * Get file icon color based on MIME type or file extension
- * @param mimetype - MIME type of the file
- * @param filename - Name of the file (for extension fallback)
- * @returns Tailwind color class
- */
-export function getFileIconColor(mimetype?: string, filename?: string): string {
-  if (!mimetype && !filename) return 'text-neutral-500';
-  
-  const mime = mimetype?.toLowerCase() || '';
-  const ext = filename?.split('.').pop()?.toLowerCase() || '';
-  
-  // Document types
-  if (mime.includes('pdf') || ext === 'pdf') return 'text-red-500';
-  if (mime.includes('document') || mime.includes('text') || ['doc', 'docx', 'txt', 'rtf'].includes(ext)) return 'text-blue-500';
-  
-  // Image types
-  if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)) return 'text-green-500';
-  
-  // Video types
-  if (mime.startsWith('video/') || ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'text-purple-500';
-  
-  // Audio types
-  if (mime.startsWith('audio/') || ['mp3', 'wav', 'flac', 'aac'].includes(ext)) return 'text-orange-500';
-  
-  // Archive types
-  if (mime.includes('zip') || mime.includes('rar') || mime.includes('7z') || ['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'text-yellow-600';
-  
-  // Code types
-  if (['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'scss', 'json', 'xml', 'py', 'java', 'cpp', 'c', 'php'].includes(ext)) return 'text-indigo-500';
-  
-  // Spreadsheet types
-  if (mime.includes('spreadsheet') || ['xls', 'xlsx', 'csv'].includes(ext)) return 'text-emerald-500';
-  
-  // Presentation types
-  if (mime.includes('presentation') || ['ppt', 'pptx'].includes(ext)) return 'text-amber-500';
-  
-  return 'text-neutral-500';
+type IconName = "File" | "FileText" | "Image" | "Video" | "Music" | "Archive" | "Code" | "Table" | "Presentation";
+
+const ICON_RULES: { icon: IconName; color: string; mime?: (m: string) => boolean; ext: string[] }[] = [
+  { icon: "FileText", color: "text-red-500", mime: (m) => m.includes("pdf"), ext: ["pdf"] },
+  { icon: "Image", color: "text-green-500", mime: (m) => m.startsWith("image/"), ext: ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "heic"] },
+  { icon: "Video", color: "text-purple-500", mime: (m) => m.startsWith("video/"), ext: ["mp4", "mov", "avi", "mkv", "webm"] },
+  { icon: "Music", color: "text-orange-500", mime: (m) => m.startsWith("audio/"), ext: ["mp3", "wav", "flac", "aac", "ogg"] },
+  { icon: "Archive", color: "text-yellow-600", mime: (m) => /zip|rar|7z|tar|gzip/.test(m), ext: ["zip", "rar", "7z", "tar", "gz"] },
+  { icon: "Table", color: "text-emerald-500", mime: (m) => m.includes("spreadsheet") || m.includes("csv"), ext: ["xls", "xlsx", "csv", "ods"] },
+  { icon: "Presentation", color: "text-amber-500", mime: (m) => m.includes("presentation"), ext: ["ppt", "pptx", "odp", "key"] },
+  { icon: "Code", color: "text-indigo-500", ext: ["js", "ts", "jsx", "tsx", "html", "css", "json", "xml", "py", "java", "c", "cpp", "go", "rs", "php", "sh"] },
+  { icon: "FileText", color: "text-blue-500", mime: (m) => m.includes("document") || m.startsWith("text/"), ext: ["doc", "docx", "txt", "rtf", "md", "odt"] },
+];
+
+function matchIcon(mimetype?: string | null, filename?: string) {
+  const mime = mimetype?.toLowerCase() ?? "";
+  const ext = filename?.split(".").pop()?.toLowerCase() ?? "";
+  return ICON_RULES.find((r) => (mime && r.mime?.(mime)) || r.ext.includes(ext));
 }
+
+export const getFileIcon = (mimetype?: string | null, filename?: string): IconName => matchIcon(mimetype, filename)?.icon ?? "File";
+export const getFileIconColor = (mimetype?: string | null, filename?: string) => matchIcon(mimetype, filename)?.color ?? "text-neutral-500";

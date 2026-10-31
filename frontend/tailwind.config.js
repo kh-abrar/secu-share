@@ -7,7 +7,7 @@ export default {
   ],
   theme: {
     extend: {
-      fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui'] },
+      fontFamily: { sans: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'] },
       colors: {
         accent: { DEFAULT: '#2563eb' } // single blue accent
       },

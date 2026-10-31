@@ -1,0 +1,70 @@
+# Full stack on one machine:  cp .env.example .env  &&  docker compose up -d --build
+#   App:              http://localhost:8080
+#   Emails (Mailpit): http://localhost:8025   (verification links land here)
+#
+# For a public deployment put an HTTPS reverse proxy in front of the "web" service,
+# set APP_URL to the public URL and COOKIE_SECURE=true, and configure real SMTP.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "${MAIL_PORT:-8025}:8025"
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongo:27017/secushare
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env (see .env.example)}
+      FRONTEND_URL: ${APP_URL:-http://localhost:8080}
+      COOKIE_SAMESITE: lax
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUST_PROXY: 1
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      STORAGE_DIR: /app/data/uploads
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-104857600}
+      STORAGE_QUOTA_BYTES: ${STORAGE_QUOTA_BYTES:-10737418240}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM:-SecuShare <no-reply@localhost>}
+    volumes:
+      - uploads:/app/data
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_MAX_FILE_SIZE: ${MAX_FILE_SIZE:-104857600}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+
+volumes:
+  mongo-data:
+  uploads:
